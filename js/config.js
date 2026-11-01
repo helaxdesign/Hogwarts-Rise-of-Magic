@@ -8,16 +8,16 @@
  * solicitações e treinos. Veja o README.md para o passo a passo.
  */
 window.HRM_CONFIG = {
-  firebase: null,
-  // Exemplo:
-  // firebase: {
-  //   apiKey: "....",
-  //   authDomain: "seu-projeto.firebaseapp.com",
-  //   projectId: "seu-projeto",
-  //   storageBucket: "seu-projeto.appspot.com",
-  //   messagingSenderId: "....",
-  //   appId: "...."
-  // },
+  // Projeto Firebase "hogwartsriseofmagic" (estes valores são públicos por natureza;
+  // a proteção dos dados vem das regras em firestore.rules e do login da staff)
+  firebase: {
+    apiKey: "AIzaSyDfxHznnJotKA3CtZFmple7Wj7RVzMD9q8",
+    authDomain: "hogwartsriseofmagic.firebaseapp.com",
+    projectId: "hogwartsriseofmagic",
+    storageBucket: "hogwartsriseofmagic.firebasestorage.app",
+    messagingSenderId: "225542837655",
+    appId: "1:225542837655:web:4210b4a7c38429334ea0d2"
+  },
 
   // Limite de treinos por personagem por dia
   trainingsPerDay: 2,
