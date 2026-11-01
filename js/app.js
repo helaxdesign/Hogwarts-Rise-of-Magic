@@ -131,13 +131,14 @@
      ROTEAMENTO
      ===================================================== */
   const views = { salao: viewSalao, treinos: viewTreinos, staff: viewStaff };
-  let refreshTimer;
+  let refreshTimer, stopWatch;
   function route() {
     if ($("#app").hidden) return;
     const r = (location.hash.replace(/^#\/?/, "") || "salao").split("/")[0];
     const name = views[r] ? r : "salao";
     $$(".tabbar a").forEach(a => a.classList.toggle("active", a.dataset.route === name));
     clearInterval(refreshTimer);
+    if (stopWatch) { stopWatch(); stopWatch = null; }
     const v = $("#view");
     v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter");
     views[name](v);
@@ -176,13 +177,10 @@
         <button class="btn btn-gold" id="reqBtn"><span>Solicitar pontos</span></button>
       </section>`;
     $("#reqBtn").addEventListener("click", openPointsForm);
-    loadPoints();
-    refreshTimer = setInterval(loadPoints, 30000);
+    stopWatch = S.watchPoints(renderPoints, () => toast("Não foi possível carregar os pontos.", "err"));
   }
 
-  async function loadPoints() {
-    let pts;
-    try { pts = await S.getPoints(); } catch (e) { toast("Não foi possível carregar os pontos.", "err"); return; }
+  function renderPoints(pts) {
     if (!$("#hourglasses")) return;
     const max = Math.max(...Object.values(pts), 0);
     const capacity = Math.max(500, Math.ceil((max * 1.25) / 100) * 100);
@@ -405,7 +403,22 @@
      PAINEL DA STAFF
      ===================================================== */
   const STAFF_HASH = "bffc207891f716a7b4dad06ca16a8c3de28287d67c3439c4b59fca46504f0c05";
-  const isStaff = () => { try { return sessionStorage.getItem("hrm_staff") === STAFF_HASH; } catch (e) { return false; } };
+  const cloud = () => S.backend && S.backend.mode === "firebase";
+  const isStaff = () => {
+    if (cloud()) return S.backend.isStaff();
+    try { return sessionStorage.getItem("hrm_staff") === STAFF_HASH; } catch (e) { return false; }
+  };
+  const staffName = () => {
+    if (cloud()) return S.backend.staffName();
+    try { return sessionStorage.getItem("hrm_staff_nick") || "Staff"; } catch (e) { return "Staff"; }
+  };
+  async function staffLoginCheck(nick, pass) {
+    if (cloud()) return S.backend.staffLogin(nick, pass);
+    const h = await sha256(nick.trim().toLowerCase() + "|" + pass);
+    if (h !== STAFF_HASH) return false;
+    try { sessionStorage.setItem("hrm_staff", h); sessionStorage.setItem("hrm_staff_nick", nick.trim()); } catch (e) {}
+    return true;
+  }
 
   async function sha256(str) {
     if (window.crypto && crypto.subtle) {
@@ -434,13 +447,16 @@
       </section>`;
     $("#loginForm").addEventListener("submit", async ev => {
       ev.preventDefault();
-      const f = ev.target;
-      const h = await sha256(f.nick.value.trim().toLowerCase() + "|" + f.pass.value);
-      if (h === STAFF_HASH) {
-        try { sessionStorage.setItem("hrm_staff", h); sessionStorage.setItem("hrm_staff_nick", f.nick.value.trim()); } catch (e) {}
+      const f = ev.target, btn = f.querySelector("button");
+      btn.disabled = true; btn.classList.add("loading");
+      let ok = false, failed = false;
+      try { ok = await staffLoginCheck(f.nick.value, f.pass.value); }
+      catch (e) { failed = true; toast(e.message || "Erro ao entrar.", "err"); }
+      btn.disabled = false; btn.classList.remove("loading");
+      if (ok) {
         toast("Bem-vindo(a) à Sala da Staff.", "ok");
         route();
-      } else {
+      } else if (!failed) {
         f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake");
         toast("Nickname ou senha incorretos.", "err");
       }
@@ -463,7 +479,8 @@
         <button data-tab="adjust">Ajustes</button>
       </div>
       <section id="staffList" class="staff-list"></section>`;
-    $("#logout").addEventListener("click", () => {
+    $("#logout").addEventListener("click", async () => {
+      if (cloud()) await S.backend.staffLogout();
       try { sessionStorage.removeItem("hrm_staff"); } catch (e) {}
       route();
     });
@@ -517,7 +534,7 @@
   }
 
   function bindReqCards(box) {
-    const by = (() => { try { return sessionStorage.getItem("hrm_staff_nick") || "Staff"; } catch (e) { return "Staff"; } })();
+    const by = staffName();
     $$(".req", box).forEach(card => {
       const id = card.dataset.id;
       card.querySelector("[data-img]").addEventListener("click", () => showImage(card.querySelector("img").src));
@@ -611,6 +628,14 @@
   }
 
   /* ---------- início ---------- */
-  ready.then(mode => { if (mode === "local") $("#modeChip").hidden = false; });
+  ready.then(mode => {
+    if (mode === "firebase") return;
+    const chip = $("#modeChip");
+    chip.textContent = mode === "offline" ? "Sem conexão" : "Modo local";
+    chip.title = mode === "offline"
+      ? "Não foi possível conectar ao servidor. Os dados não estão sendo salvos na nuvem."
+      : "Os dados ficam só neste aparelho. Configure o Firebase em js/config.js para salvar na nuvem.";
+    chip.hidden = false;
+  });
   if (!location.hash) history.replaceState(null, "", "#/salao");
 })();

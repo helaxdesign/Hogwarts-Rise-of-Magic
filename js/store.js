@@ -29,6 +29,14 @@
     return {
       mode: "local",
       async getPoints() { return Object.assign(zero(), read("hrm_points", {})); },
+      watchPoints(cb, onErr) {
+        const emit = () => cb(Object.assign(zero(), read("hrm_points", {})));
+        const onStorage = e => { if (e.key === "hrm_points") emit(); };
+        window.addEventListener("storage", onStorage);
+        window.addEventListener("hrm-points", emit);
+        emit();
+        return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("hrm-points", emit); };
+      },
       async listRequests() { return read("hrm_requests", []).sort(byDate); },
       async addRequest(r) { const all = read("hrm_requests", []); all.push(r); write("hrm_requests", all); },
       async resolveRequest(id, approve, by) {
@@ -36,7 +44,7 @@
         const r = all.find(x => x.id === id);
         if (!r) throw new Error("Solicitação não encontrada.");
         if (r.status !== "pending") throw new Error("Esta solicitação já foi analisada.");
-        if (approve) write("hrm_points", applyDelta(read("hrm_points", {}), r));
+        if (approve) { write("hrm_points", applyDelta(read("hrm_points", {}), r)); window.dispatchEvent(new Event("hrm-points")); }
         r.status = approve ? "approved" : "denied";
         r.resolvedAt = Date.now(); r.resolvedBy = by;
         write("hrm_requests", all);
@@ -44,6 +52,7 @@
       async deleteRequest(id) { write("hrm_requests", read("hrm_requests", []).filter(x => x.id !== id)); },
       async adjustPoints(house, delta) {
         write("hrm_points", applyDelta(read("hrm_points", {}), { house, type: delta >= 0 ? "add" : "remove", amount: Math.abs(delta) }));
+        window.dispatchEvent(new Event("hrm-points"));
       },
       async listTrainings() { return read("hrm_trainings", []).sort(byDate); },
       async countTrainings(charKey, day) { return read("hrm_trainings", []).filter(t => t.charKey === charKey && t.day === day).length; },
@@ -64,12 +73,19 @@
     document.head.appendChild(s);
   });
 
+  /* "Staff Dobby" -> staff-dobby@staff.riseofmagic.app (conta criada no Firebase Authentication) */
+  const staffEmail = nick => normName(nick).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "@staff.riseofmagic.app";
+
   async function firebaseBackend(cfg) {
     const v = "10.12.2";
     await loadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-app-compat.js`);
     await loadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-firestore-compat.js`);
+    await loadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-auth-compat.js`);
     firebase.initializeApp(cfg);
     const db = firebase.firestore();
+    const auth = firebase.auth();
+    // espera o Firebase restaurar a sessão da staff (se houver)
+    await new Promise(res => { const off = auth.onAuthStateChanged(() => { off(); res(); }); });
     const pointsRef = db.collection("meta").doc("points");
     const reqs = db.collection("requests");
     const trains = db.collection("trainings");
@@ -78,6 +94,22 @@
     return {
       mode: "firebase",
       async getPoints() { const s = await pointsRef.get(); return Object.assign(zero(), s.exists ? s.data() : {}); },
+      watchPoints(cb, onErr) {
+        return pointsRef.onSnapshot(s => cb(Object.assign(zero(), s.exists ? s.data() : {})), onErr);
+      },
+      isStaff() { return !!auth.currentUser; },
+      staffName() { return (auth.currentUser && auth.currentUser.displayName) || "Staff"; },
+      async staffLogin(nick, pass) {
+        try {
+          const cred = await auth.signInWithEmailAndPassword(staffEmail(nick), pass);
+          if (!cred.user.displayName) await cred.user.updateProfile({ displayName: nick.trim() }).catch(() => {});
+          return true;
+        } catch (e) {
+          if (/network/i.test(e.code || "")) throw new Error("Sem conexão com o servidor.");
+          return false;
+        }
+      },
+      async staffLogout() { await auth.signOut(); },
       async listRequests() { return docs(await reqs.orderBy("createdAt", "desc").limit(300).get()); },
       async addRequest(r) { await reqs.doc(r.id).set(r); },
       async resolveRequest(id, approve, by) {
@@ -122,19 +154,19 @@
   }
 
   const Store = {
-    uid, today, normName, KEYS,
+    uid, today, normName, KEYS, staffEmail,
     backend: null,
     async init() {
       const cfg = window.HRM_CONFIG && window.HRM_CONFIG.firebase;
       if (cfg) {
         try { this.backend = await firebaseBackend(cfg); return this.backend.mode; }
-        catch (e) { console.error(e); }
+        catch (e) { console.error(e); this.backend = localBackend(); this.backend.mode = "offline"; return "offline"; }
       }
       this.backend = localBackend();
       return this.backend.mode;
     }
   };
-  ["getPoints", "listRequests", "addRequest", "resolveRequest", "deleteRequest", "adjustPoints",
+  ["getPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "deleteRequest", "adjustPoints",
    "listTrainings", "countTrainings", "addTraining", "deleteTraining"].forEach(fn => {
     Store[fn] = (...a) => Store.backend[fn](...a);
   });

@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Regras de segurança do Hogwarts: Rise of Magic
+// Firebase Console → Firestore Database → Regras → cole este conteúdo → Publicar
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Staff = qualquer conta criada em Authentication (ex.: staff-dobby@staff.riseofmagic.app)
+    function isStaff() { return request.auth != null; }
+    function houses() { return ['grifinoria', 'corvinal', 'sonserina', 'lufalufa']; }
+
+    // Placar: todos leem, só a staff altera
+    match /meta/points {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Pedidos de pontos: qualquer um envia (sempre como "pendente"); só a staff lê e decide
+    match /requests/{id} {
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.house in houses()
+        && request.resource.data.type in ['add', 'remove']
+        && request.resource.data.amount is int
+        && request.resource.data.amount >= 1 && request.resource.data.amount <= 1000
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.image is string && request.resource.data.image.size() < 900000;
+      allow read, update, delete: if isStaff();
+    }
+
+    // Treinos: todos leem e registram (respeitando o mínimo de caracteres); só a staff exclui
+    match /trainings/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.house in houses()
+        && request.resource.data.scene is string
+        && ((request.resource.data.kind == 'normal'    && request.resource.data.pp == 20 && request.resource.data.scene.size() >= 1500)
+         || (request.resource.data.kind == 'talento'   && request.resource.data.pp == 25 && request.resource.data.scene.size() >= 750)
+         || (request.resource.data.kind == 'inaptidao' && request.resource.data.pp == 15 && request.resource.data.scene.size() >= 3000));
+      allow delete: if isStaff();
+    }
+  }
+}
