@@ -85,7 +85,28 @@
   /* =====================================================
      CARTA
      ===================================================== */
-  $("#letterCrest").innerHTML = H.hogwartsCrestSVG();
+  $("#letterCrest").innerHTML = H.hogwartsCrestSVG({ uid: "letter", ink: "#24180b" });
+  $("#envCrest").innerHTML = H.hogwartsCrestSVG({ uid: "env", ink: "#3a2812", hfill: "#ead6ad" });
+  $("#sealCrest").innerHTML = H.hogwartsCrestSVG({ uid: "seal", ink: "#3d0505", hfill: "transparent" });
+  // contornos curvos do envelope (polígonos gerados a partir de curvas)
+  (function shapeEnvelope() {
+    const bez = (p0, p1, p2, p3, n = 14) => Array.from({ length: n + 1 }, (_, i) => {
+      const t = i / n, u = 1 - t;
+      return [u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0], u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1]];
+    });
+    const poly = pts => `polygon(${pts.map(([x, y]) => `${x.toFixed(2)}% ${y.toFixed(2)}%`).join(",")})`;
+    const mirror = pts => pts.map(([x, y]) => [100 - x, y]).reverse();
+    // aba de cima com "ombros" curvos e ponta arredondada
+    const flapR = [...bez([100, 0], [96, 14], [80, 18], [72, 30]), ...bez([72, 30], [64, 42], [58, 58], [50, 60])];
+    $(".env-flap").style.clipPath = poly([[0, 0], [100, 0], ...flapR.slice(1), ...mirror(flapR).slice(1)]);
+    // abas laterais
+    const sideL = [[0, 0], ...bez([0, 0], [18, 22], [40, 40], [44, 58]).slice(1), ...bez([44, 58], [46, 70], [20, 86], [0, 100]).slice(1)];
+    $(".env-side-l").style.clipPath = poly(sideL);
+    $(".env-side-r").style.clipPath = poly(mirror(sideL));
+    // bolso de baixo
+    const pocketL = bez([0, 100], [16, 86], [38, 66], [50, 60]);
+    $(".env-pocket").style.clipPath = poly([...pocketL, ...mirror(pocketL).slice(1)]);
+  })();
   let opened = false;
   $("#envelope").addEventListener("click", () => {
     if (opened) return; opened = true;
@@ -136,14 +157,17 @@
         <h1 class="page-title">Salão Principal</h1>
         <p class="lead">A Taça das Casas está em disputa. Cada grão de areia é um ponto conquistado.</p>
       </section>
-      <section class="hourglasses" id="hourglasses">
-        ${H.HOUSES.map(h => `
-          <article class="hg-card" data-house="${h.key}" style="--glow:${h.glow}">
-            <div class="hg-crest">${H.crestSVG(h.key, { uid: "salao" })}</div>
-            <div class="hg-glass">${H.hourglassSVG(h.key)}</div>
-            <h2 class="hg-name">${h.name}</h2>
-            <p class="hg-points"><span class="num" data-points="${h.key}">0</span><small>pontos</small></p>
-          </article>`).join("")}
+      <section class="hall" id="hourglasses">
+        <div class="hall-row hall-crests">
+          ${H.HOUSES.map(h => `<div class="hall-crest" data-house="${h.key}">${H.crestSVG(h.key, { uid: "salao" })}</div>`).join("")}
+        </div>
+        <div class="hall-rack">${H.rackSVG()}</div>
+        <div class="hall-row hall-points">
+          ${H.HOUSES.map(h => `
+            <div class="hall-pt hb-${h.key}" data-house="${h.key}">
+              <span class="num" data-points="${h.key}">0</span><small>pontos</small>
+            </div>`).join("")}
+        </div>
       </section>
       <div class="leader" id="leader"></div>
       <section class="panel cta">
@@ -163,10 +187,10 @@
     const max = Math.max(...Object.values(pts), 0);
     const capacity = Math.max(500, Math.ceil((max * 1.25) / 100) * 100);
     H.HOUSES.forEach(h => {
-      const card = $(`.hg-card[data-house="${h.key}"]`);
+      const lead = max > 0 && pts[h.key] === max;
       animateNumber($(`[data-points="${h.key}"]`), pts[h.key]);
-      animateSand(card.querySelector("svg.hourglass"), h.key, pts[h.key] / capacity);
-      card.classList.toggle("is-leader", max > 0 && pts[h.key] === max);
+      animateSand($(`.tube[data-house="${h.key}"]`), h.key, pts[h.key] / capacity);
+      $$(`.hall [data-house="${h.key}"]`).forEach(el => el.classList.toggle("is-leader", lead));
     });
     const leaders = H.HOUSES.filter(h => max > 0 && pts[h.key] === max);
     $("#leader").innerHTML = leaders.length === 1
