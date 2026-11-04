@@ -11,6 +11,16 @@
   const normName = s => String(s || "").trim().toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
 
+  /* O documento do placar guarda os pontos e o estado da Taça (trancada ou aberta) */
+  const split = d => {
+    d = d || {};
+    return {
+      pts: Object.fromEntries(KEYS.map(k => [k, Number(d[k]) || 0])),
+      cup: { locked: d.locked === true, by: d.lockedBy || "", at: d.lockedAt || 0 }
+    };
+  };
+  const LOCKED_MSG = "A Taça está trancada pela moderação. Novos pedidos de pontos não estão sendo aceitos agora.";
+
   const applyDelta = (points, r) => {
     const p = Object.assign(zero(), points);
     const delta = r.type === "add" ? r.amount : -r.amount;
@@ -28,9 +38,18 @@
     const byDate = (a, b) => b.createdAt - a.createdAt;
     return {
       mode: "local",
-      async getPoints() { return Object.assign(zero(), read("hrm_points", {})); },
+      async getPoints() { return split(read("hrm_points", {})).pts; },
+      async getCup() { return split(read("hrm_points", {})).cup; },
+      async setCupLocked(locked, by) {
+        write("hrm_points", Object.assign(read("hrm_points", {}), { locked, lockedBy: by, lockedAt: Date.now() }));
+        window.dispatchEvent(new Event("hrm-points"));
+      },
+      async resetPoints(by) {
+        write("hrm_points", Object.assign(read("hrm_points", {}), zero(), { resetBy: by, resetAt: Date.now() }));
+        window.dispatchEvent(new Event("hrm-points"));
+      },
       watchPoints(cb, onErr) {
-        const emit = () => cb(Object.assign(zero(), read("hrm_points", {})));
+        const emit = () => { const x = split(read("hrm_points", {})); cb(x.pts, x.cup); };
         const onStorage = e => { if (e.key === "hrm_points") emit(); };
         window.addEventListener("storage", onStorage);
         window.addEventListener("hrm-points", emit);
@@ -38,7 +57,10 @@
         return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("hrm-points", emit); };
       },
       async listRequests() { return read("hrm_requests", []).sort(byDate); },
-      async addRequest(r) { const all = read("hrm_requests", []); all.push(r); write("hrm_requests", all); },
+      async addRequest(r) {
+        if (split(read("hrm_points", {})).cup.locked) throw new Error(LOCKED_MSG);
+        const all = read("hrm_requests", []); all.push(r); write("hrm_requests", all);
+      },
       async resolveRequest(id, approve, by) {
         const all = read("hrm_requests", []);
         const r = all.find(x => x.id === id);
@@ -93,9 +115,16 @@
 
     return {
       mode: "firebase",
-      async getPoints() { const s = await pointsRef.get(); return Object.assign(zero(), s.exists ? s.data() : {}); },
+      async getPoints() { const s = await pointsRef.get(); return split(s.exists ? s.data() : {}).pts; },
+      async getCup() { const s = await pointsRef.get(); return split(s.exists ? s.data() : {}).cup; },
+      async setCupLocked(locked, by) {
+        await pointsRef.set({ locked, lockedBy: by, lockedAt: Date.now() }, { merge: true });
+      },
+      async resetPoints(by) {
+        await pointsRef.set(Object.assign(zero(), { resetBy: by, resetAt: Date.now() }), { merge: true });
+      },
       watchPoints(cb, onErr) {
-        return pointsRef.onSnapshot(s => cb(Object.assign(zero(), s.exists ? s.data() : {})), onErr);
+        return pointsRef.onSnapshot(s => { const x = split(s.exists ? s.data() : {}); cb(x.pts, x.cup); }, onErr);
       },
       isStaff() { return !!auth.currentUser; },
       staffName() { return (auth.currentUser && auth.currentUser.displayName) || "Staff"; },
@@ -111,7 +140,12 @@
       },
       async staffLogout() { await auth.signOut(); },
       async listRequests() { return docs(await reqs.orderBy("createdAt", "desc").limit(300).get()); },
-      async addRequest(r) { await reqs.doc(r.id).set(r); },
+      async addRequest(r) {
+        const s = await pointsRef.get();
+        if (split(s.exists ? s.data() : {}).cup.locked) throw new Error(LOCKED_MSG);
+        try { await reqs.doc(r.id).set(r); }
+        catch (e) { throw new Error(e.code === "permission-denied" ? "O servidor recusou o pedido. A Taça pode ter sido trancada agora há pouco." : "Erro ao enviar. Tente novamente."); }
+      },
       async resolveRequest(id, approve, by) {
         await db.runTransaction(async tx => {
           const ref = reqs.doc(id);
@@ -166,7 +200,7 @@
       return this.backend.mode;
     }
   };
-  ["getPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "deleteRequest", "adjustPoints",
+  ["getPoints", "getCup", "setCupLocked", "resetPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "deleteRequest", "adjustPoints",
    "listTrainings", "countTrainings", "addTraining", "deleteTraining"].forEach(fn => {
     Store[fn] = (...a) => Store.backend[fn](...a);
   });

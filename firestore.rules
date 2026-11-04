@@ -8,6 +8,9 @@ service cloud.firestore {
     // Staff = qualquer conta criada em Authentication (ex.: staff-dobby@staff.riseofmagic.app)
     function isStaff() { return request.auth != null; }
     function houses() { return ['grifinoria', 'corvinal', 'sonserina', 'lufalufa']; }
+    function cupPath() { return /databases/$(database)/documents/meta/points; }
+    // A Taça está aberta se o placar ainda não existe ou se "locked" não é true
+    function cupOpen() { return !exists(cupPath()) || get(cupPath()).data.get('locked', false) != true; }
 
     // Placar: todos leem, só a staff altera
     match /meta/points {
@@ -15,9 +18,11 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
-    // Pedidos de pontos: qualquer um envia (sempre como "pendente"); só a staff lê e decide
+    // Pedidos de pontos: qualquer um envia (sempre como "pendente") enquanto a Taça estiver aberta;
+    // só a staff lê e decide
     match /requests/{id} {
-      allow create: if request.resource.data.status == 'pending'
+      allow create: if cupOpen()
+        && request.resource.data.status == 'pending'
         && request.resource.data.house in houses()
         && request.resource.data.type in ['add', 'remove']
         && request.resource.data.amount is int

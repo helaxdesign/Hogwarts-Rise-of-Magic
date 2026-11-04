@@ -171,13 +171,28 @@
         </div>
       </section>
       <div class="leader" id="leader"></div>
-      <section class="panel cta">
+      <section class="panel cta" id="cta"></section>`;
+    stopWatch = S.watchPoints((pts, cup) => { renderPoints(pts); renderCta(cup); },
+      () => toast("Não foi possível carregar os pontos.", "err"));
+  }
+
+  function renderCta(cup) {
+    const box = $("#cta"); if (!box) return;
+    const key = cup.locked ? "locked" : "open";
+    if (box.dataset.state === key) return;
+    box.dataset.state = key;
+    box.classList.toggle("locked", cup.locked);
+    box.innerHTML = cup.locked ? `
+        <div class="lock-icon" aria-hidden="true">🔒</div>
+        <h3>A Taça está trancada</h3>
+        <p>A moderação encerrou o envio de pedidos de pontos por enquanto. Assim que a Taça for reaberta, você poderá enviar novamente.</p>
+        <button class="btn btn-gold" disabled><span>Envios trancados</span></button>` : `
         <h3>Ganhou ou perdeu pontos em cena?</h3>
         <p>Envie o pedido com o print da cena. A moderação confere e, se aprovado, a areia da ampulheta se move.</p>
-        <button class="btn btn-gold" id="reqBtn"><span>Solicitar pontos</span></button>
-      </section>`;
-    $("#reqBtn").addEventListener("click", openPointsForm);
-    stopWatch = S.watchPoints(renderPoints, () => toast("Não foi possível carregar os pontos.", "err"));
+        <button class="btn btn-gold" id="reqBtn"><span>Solicitar pontos</span></button>`;
+    const btn = $("#reqBtn");
+    if (btn) btn.addEventListener("click", openPointsForm);
+    if (cup.locked && !$("#sheet").hidden && $("#pointsForm")) { closeSheet(); toast("A Taça acabou de ser trancada pela moderação.", "err"); }
   }
 
   function renderPoints(pts) {
@@ -476,7 +491,7 @@
         <button data-tab="pending">Pendentes</button>
         <button data-tab="history">Histórico</button>
         <button data-tab="trainings">Treinos</button>
-        <button data-tab="adjust">Ajustes</button>
+        <button data-tab="adjust">Taça</button>
       </div>
       <section id="staffList" class="staff-list"></section>`;
     $("#logout").addEventListener("click", async () => {
@@ -574,25 +589,70 @@
     }));
   }
 
-  function renderAdjust(box) {
+  async function renderAdjust(box) {
+    let cup = { locked: false };
+    try { cup = await S.getCup(); } catch (e) {}
+    const when = cup.at ? ` em ${fmtDate(cup.at)}` : "";
     box.innerHTML = `
+      <div class="panel cup-panel ${cup.locked ? "locked" : ""}">
+        <h3>${cup.locked ? "🔒 Taça trancada" : "🔓 Taça aberta"}</h3>
+        <p class="muted">${cup.locked
+          ? `Ninguém consegue enviar pedidos de pontos.${cup.by ? ` Trancada por ${esc(cup.by)}${when}.` : ""} Pedidos que já estavam pendentes ainda podem ser aprovados ou negados.`
+          : `Os jogadores podem enviar pedidos de pontos normalmente.${cup.by ? ` Aberta por ${esc(cup.by)}${when}.` : ""}`}</p>
+        <button class="btn btn-block ${cup.locked ? "btn-ok" : "btn-no"}" id="lockBtn">
+          <span>${cup.locked ? "Abrir a Taça" : "Trancar a Taça"}</span></button>
+      </div>
+
       <div class="panel">
         <h3>Ajuste direto de pontos</h3>
         <p class="muted">Para correções da staff (não precisa de print).</p>
-        <form id="adjForm" class="form">
-          <div class="row">
-            <label class="field"><span>Casa</span><select name="house" required>${houseOptions()}</select></label>
-            <label class="field"><span>Pontos (+/−)</span><input name="delta" type="number" inputmode="numeric" placeholder="Ex.: -10" required></label>
+        <form id="adjForm" class="form" novalidate>
+          <label class="field"><span>Casa</span><select name="house" required>${houseOptions()}</select></label>
+          <div class="field"><span>Ação</span>
+            <div class="seg">
+              <label><input type="radio" name="type" value="add" checked><span>＋ Adicionar</span></label>
+              <label><input type="radio" name="type" value="remove"><span>－ Remover</span></label>
+            </div>
           </div>
+          <label class="field"><span>Quantidade de pontos</span>
+            <input name="amount" type="number" inputmode="numeric" min="1" max="100000" placeholder="Ex.: 10" required></label>
           <button class="btn btn-gold btn-block"><span>Aplicar ajuste</span></button>
         </form>
+      </div>
+
+      <div class="panel danger-panel">
+        <h3>Zerar a Taça</h3>
+        <p class="muted">Volta os pontos das quatro casas para 0 e começa uma nova disputa. O histórico de pedidos é mantido. Essa ação não pode ser desfeita.</p>
+        <button class="btn btn-no btn-block" id="resetBtn"><span>Reset geral dos pontos</span></button>
       </div>`;
+
+    $("#lockBtn").addEventListener("click", async ev => {
+      const lock = !cup.locked;
+      if (lock && !confirm("Trancar a Taça? Ninguém mais conseguirá enviar pedidos de pontos até ela ser aberta.")) return;
+      ev.currentTarget.disabled = true;
+      try { await S.setCupLocked(lock, staffName()); toast(lock ? "Taça trancada. 🔒" : "Taça aberta! Os pedidos estão liberados. 🔓", "ok"); }
+      catch (e) { toast("Não foi possível alterar a Taça. " + (e.message || ""), "err"); }
+      renderStaff();
+    });
+
     $("#adjForm").addEventListener("submit", async ev => {
       ev.preventDefault();
-      const f = ev.target, d = parseInt(f.delta.value, 10);
-      if (!f.house.value || !d) return toast("Escolha a casa e um valor diferente de zero.", "err");
-      try { await S.adjustPoints(f.house.value, d); toast("Ajuste aplicado.", "ok"); f.reset(); renderStaff(); }
-      catch (e) { toast(e.message || "Erro.", "err"); }
+      const f = ev.target, n = parseInt(f.amount.value, 10), add = f.type.value === "add";
+      if (!f.house.value) return toast("Escolha a casa.", "err");
+      if (!n || n < 1) return toast("Informe uma quantidade maior que zero.", "err");
+      const h = H.BY_KEY[f.house.value].name;
+      if (!confirm(`${add ? "Adicionar" : "Remover"} ${fmt(n)} pontos ${add ? "à" : "da"} ${h}?`)) return;
+      try {
+        await S.adjustPoints(f.house.value, add ? n : -n);
+        toast(`${add ? "+" : "−"}${fmt(n)} pontos para ${h}.`, "ok"); f.reset(); renderStaff();
+      } catch (e) { toast(e.message || "Erro.", "err"); }
+    });
+
+    $("#resetBtn").addEventListener("click", async () => {
+      if (!confirm("Zerar os pontos de TODAS as casas? Essa ação não pode ser desfeita.")) return;
+      if (!confirm("Tem certeza? A Taça vai recomeçar do 0.")) return;
+      try { await S.resetPoints(staffName()); toast("Pontos zerados. Uma nova disputa começa! ✨", "ok"); renderStaff(); }
+      catch (e) { toast(e.message || "Erro ao zerar.", "err"); }
     });
   }
 

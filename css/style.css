@@ -657,3 +657,14 @@ summary { cursor: pointer; color: var(--gold-2); font-family: var(--display); fo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Taça trancada / painel da Taça ---------- */
+.cta.locked { border-color: rgba(212,87,63,.55); box-shadow: 0 12px 34px -14px rgba(0,0,0,.9), 0 0 28px -10px rgba(212,87,63,.5); }
+.cta.locked h3 { color: #ffb4a3; }
+.lock-icon { font-size: 30px; line-height: 1; margin-bottom: 6px; filter: drop-shadow(0 0 10px rgba(233,196,106,.6)); }
+.staff-list .panel + .panel { margin-top: 0; }
+.cup-panel { border-color: rgba(76,193,123,.5); }
+.cup-panel.locked { border-color: rgba(212,87,63,.6); }
+.danger-panel { border-color: rgba(212,87,63,.35); }
+.danger-panel h3 { color: #ffb4a3; }
+.staff-list .btn-ok, .staff-list .btn-no { min-height: 48px; font-size: 14px; }
