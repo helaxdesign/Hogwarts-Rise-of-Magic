@@ -258,6 +258,8 @@
         </div>
         <label class="field"><span>Quantidade de pontos</span>
           <input name="amount" type="number" inputmode="numeric" min="1" max="1000" required placeholder="Ex.: 10"></label>
+        <label class="field"><span>Data em que ganhou/perdeu os pontos</span>
+          <input name="sceneDate" type="date" required max="${S.today()}" value="${S.today()}"></label>
         <label class="field"><span>Contexto <em>(opcional)</em></span>
           <textarea name="note" rows="2" maxlength="400" placeholder="Ex.: Aula de Poções — resposta correta ao Prof. Slughorn"></textarea></label>
         <label class="field file-field"><span>Print da cena</span>
@@ -283,6 +285,9 @@
         if (!fd.get("year")) return toast("Selecione o ano escolar.", "err");
         if (!fd.get("house")) return toast("Selecione a casa.", "err");
         if (!amount || amount < 1 || amount > 1000) return toast("Quantidade deve ser entre 1 e 1000.", "err");
+        const sceneDate = String(fd.get("sceneDate") || "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sceneDate)) return toast("Informe a data em que ganhou ou perdeu os pontos.", "err");
+        if (sceneDate > S.today()) return toast("A data não pode ser no futuro.", "err");
         if (!fileIn.files[0]) return toast("Anexe o print da cena.", "err");
         const btn = form.querySelector("button[type=submit]");
         btn.disabled = true; btn.classList.add("loading");
@@ -290,7 +295,7 @@
           const image = await compressImage(fileIn.files[0]);
           await S.addRequest({
             id: S.uid(), name, year: fd.get("year"), house: fd.get("house"),
-            type: fd.get("type"), amount, note: String(fd.get("note") || "").trim(),
+            type: fd.get("type"), amount, sceneDate, note: String(fd.get("note") || "").trim(),
             image, status: "pending", createdAt: Date.now()
           });
           closeSheet();
@@ -537,6 +542,7 @@
         <div class="req-info">
           <div class="req-top"><b>${esc(r.name)}</b><span class="amt ${add ? "plus" : "minus"}">${add ? "+" : "−"}${fmt(r.amount)}</span></div>
           <p>${houseBadge(r.house)} <span class="muted">${esc(r.year)}</span></p>
+          ${r.sceneDate ? `<p class="scene-date">📅 Cena de ${esc(r.sceneDate.split("-").reverse().join("/"))}</p>` : ""}
           ${r.note ? `<p class="note">“${esc(r.note)}”</p>` : ""}
           <p class="muted tiny">${fmtDate(r.createdAt)}${r.status !== "pending" ? ` · <span class="st st-${r.status}">${st}</span>${r.resolvedBy ? ` por ${esc(r.resolvedBy)}` : ""}` : ""}</p>
           ${r.status === "pending" ? `
