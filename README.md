@@ -2,15 +2,14 @@
 
 Site para RPG de Hogwarts, pensado primeiro para celulares. Ele tem:
 
-1. **Carta de admissão**: o envelope chega "voando", a pessoa toca no selo de cera, o envelope se abre e a carta se desdobra.
-2. **Salão Principal**: uma estante de bronze com quatro ampulhetas, uma por casa, cada uma com seu brasão. A areia desce conforme os pontos aprovados. Há também um formulário de solicitação de pontos (nome, ano, casa, adicionar/retirar, quantidade e print da cena).
-3. **Treinos de Perícias**: formulário com contador de caracteres e limite de 2 treinos por personagem por dia.
+1. **Salão Principal** (página inicial): uma estante de bronze com quatro ampulhetas, uma por casa, cada uma com seu brasão. A areia desce conforme os pontos aprovados. Há também um formulário de solicitação de pontos (nome, ano, casa, adicionar/retirar, quantidade e print da cena).
+2. **Treinos de Perícias**: formulário com contador de caracteres e limite de 2 treinos por personagem por dia.
    | Tipo | Caracteres mínimos | Ganho |
    |---|---|---|
    | Normal | 1.500 | 20 PP |
    | Talento | 750 | 25 PP |
    | Inaptidão | 3.000 | 15 PP |
-4. **Painel da Staff**: login, solicitações pendentes com o print (toque para ampliar), aprovar (os pontos são aplicados sozinhos) ou negar, histórico, leitura das cenas de treino e ajuste manual de pontos.
+3. **Painel da Staff**: login, solicitações pendentes com o print (toque para ampliar), aprovar (os pontos são aplicados sozinhos) ou negar, histórico, leitura das cenas de treino e ajuste manual de pontos.
 
 ## Arquivos
 

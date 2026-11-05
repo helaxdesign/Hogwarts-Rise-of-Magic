@@ -83,57 +83,11 @@
   const ready = S.init();
 
   /* =====================================================
-     CARTA
-     ===================================================== */
-  $("#letterCrest").innerHTML = H.hogwartsCrestSVG({ uid: "letter", ink: "#24180b" });
-  $("#envCrest").innerHTML = H.hogwartsCrestSVG({ uid: "env", ink: "#3a2812", hfill: "#ead6ad" });
-  $("#sealCrest").innerHTML = H.hogwartsCrestSVG({ uid: "seal", ink: "#3d0505", hfill: "transparent" });
-  // contornos curvos do envelope (polígonos gerados a partir de curvas)
-  (function shapeEnvelope() {
-    const bez = (p0, p1, p2, p3, n = 14) => Array.from({ length: n + 1 }, (_, i) => {
-      const t = i / n, u = 1 - t;
-      return [u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0], u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1]];
-    });
-    const poly = pts => `polygon(${pts.map(([x, y]) => `${x.toFixed(2)}% ${y.toFixed(2)}%`).join(",")})`;
-    const mirror = pts => pts.map(([x, y]) => [100 - x, y]).reverse();
-    // aba de cima com "ombros" curvos e ponta arredondada
-    const flapR = [...bez([100, 0], [96, 14], [80, 18], [72, 30]), ...bez([72, 30], [64, 42], [58, 58], [50, 60])];
-    $(".env-flap").style.clipPath = poly([[0, 0], [100, 0], ...flapR.slice(1), ...mirror(flapR).slice(1)]);
-    // abas laterais
-    const sideL = [[0, 0], ...bez([0, 0], [18, 22], [40, 40], [44, 58]).slice(1), ...bez([44, 58], [46, 70], [20, 86], [0, 100]).slice(1)];
-    $(".env-side-l").style.clipPath = poly(sideL);
-    $(".env-side-r").style.clipPath = poly(mirror(sideL));
-    // bolso de baixo
-    const pocketL = bez([0, 100], [16, 86], [38, 66], [50, 60]);
-    $(".env-pocket").style.clipPath = poly([...pocketL, ...mirror(pocketL).slice(1)]);
-  })();
-  let opened = false;
-  $("#envelope").addEventListener("click", () => {
-    if (opened) return; opened = true;
-    const wrap = $("#envelopeWrap");
-    wrap.classList.add("opening");
-    $("#introHint").classList.add("fade");
-    if (navigator.vibrate) navigator.vibrate(18);
-    setTimeout(() => wrap.classList.add("rise"), 650);
-    setTimeout(() => {
-      wrap.classList.add("gone");
-      $("#letter").classList.add("show");
-    }, 1700);
-  });
-  $("#enterBtn").addEventListener("click", () => {
-    $("#intro").classList.add("leave");
-    $("#app").hidden = false;
-    setTimeout(() => { $("#intro").remove(); }, 900);
-    ready.then(route);
-  });
-
-  /* =====================================================
      ROTEAMENTO
      ===================================================== */
   const views = { salao: viewSalao, treinos: viewTreinos, staff: viewStaff };
   let refreshTimer, stopWatch;
   function route() {
-    if ($("#app").hidden) return;
     const r = (location.hash.replace(/^#\/?/, "") || "salao").split("/")[0];
     const name = views[r] ? r : "salao";
     $$(".tabbar a").forEach(a => a.classList.toggle("active", a.dataset.route === name));
@@ -144,7 +98,7 @@
     views[name](v);
     window.scrollTo(0, 0);
   }
-  window.addEventListener("hashchange", route);
+  window.addEventListener("hashchange", () => ready.then(route));
 
   /* =====================================================
      SALÃO PRINCIPAL
@@ -694,6 +648,7 @@
   }
 
   /* ---------- início ---------- */
+  ready.then(route);
   ready.then(mode => {
     if (mode === "firebase") return;
     const chip = $("#modeChip");
