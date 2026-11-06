@@ -27,5 +27,30 @@ window.HRM_CONFIG = {
     normal:    { label: "Perícia Normal",    chars: 1500, pp: 20 },
     talento:   { label: "Perícia Talento",   chars: 750,  pp: 25 },
     inaptidao: { label: "Perícia Inaptidão", chars: 3000, pp: 15 }
-  }
+  },
+
+  // Plataforma de Trabalhos: matérias (o "slug" é o identificador usado no banco e nas regras)
+  subjects: [
+    { slug: "feiticos",        name: "Feitiços" },
+    { slug: "transfiguracao",  name: "Transfiguração" },
+    { slug: "pocoes",          name: "Poções" },
+    { slug: "dcat",            name: "Defesa Contra as Artes das Trevas" },
+    { slug: "herbologia",      name: "Herbologia" },
+    { slug: "historia",        name: "História da Magia" },
+    { slug: "astronomia",      name: "Astronomia" },
+    { slug: "aritmancia",      name: "Aritmancia" },
+    { slug: "adivinhacao",     name: "Adivinhação" },
+    { slug: "runas",           name: "Runas Antigas" },
+    { slug: "trouxas",         name: "Estudos dos Trouxas" },
+    { slug: "criaturas",       name: "Trato de Criaturas Mágicas" },
+    { slug: "varinhologia",    name: "Varinhologia" },
+    { slug: "alquimia",        name: "Alquimia" },
+    { slug: "medibruxaria",    name: "Medibruxaria" },
+    { slug: "duelos",          name: "Duelos" },
+    { slug: "voo",             name: "Voo" }
+  ],
+
+  // Prazos dos trabalhos (em dias, contados a partir da data em que o trabalho foi passado).
+  // Atenção: o firestore.rules também confere "7 dias de atraso" e "50%"; se mudar aqui, mude lá.
+  homework: { onTimeDays: 7, lateDays: 7, latePercent: 50 }
 };

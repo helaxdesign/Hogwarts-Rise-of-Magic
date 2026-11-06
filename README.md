@@ -2,14 +2,33 @@
 
 Site para RPG de Hogwarts, pensado primeiro para celulares. Ele tem:
 
-1. **Salão Principal** (página inicial): uma estante de bronze com quatro ampulhetas, uma por casa, cada uma com seu brasão. A areia desce conforme os pontos aprovados. Há também um formulário de solicitação de pontos (nome, ano, casa, adicionar/retirar, quantidade e print da cena).
-2. **Treinos de Perícias**: formulário com contador de caracteres e limite de 2 treinos por personagem por dia.
+1. **Salão Principal** (página inicial): uma estante de bronze com quatro ampulhetas, uma por casa, cada uma com seu brasão. A areia desce conforme os pontos aprovados. Há também um formulário de solicitação de pontos (nome, ano, casa, adicionar/retirar, quantidade, data da cena e print).
+2. **Trabalhos**: a Plataforma de Trabalhos (veja abaixo).
+3. **Treinos de Perícias**: formulário com contador de caracteres e limite de 2 treinos por personagem por dia.
    | Tipo | Caracteres mínimos | Ganho |
    |---|---|---|
    | Normal | 1.500 | 20 PP |
    | Talento | 750 | 25 PP |
    | Inaptidão | 3.000 | 15 PP |
-3. **Painel da Staff**: login, solicitações pendentes com o print (toque para ampliar), aprovar (os pontos são aplicados sozinhos) ou negar, histórico, leitura das cenas de treino e ajuste manual de pontos.
+4. **Staff**: painel com três áreas:
+   - **Taça**: pedidos de pontos (com o print), histórico permanente (não dá para excluir), trancar/abrir a Taça, ajuste direto e reset geral;
+   - **Treinos**: histórico completo dos treinos, com busca por personagem e filtro por casa;
+   - **Professores**: aprovar, recusar ou suspender cadastros de professores.
+
+## Plataforma de Trabalhos
+
+- **Alunos** escolhem o ano (1º ao 7º) e veem o **Mural de Deveres** com os trabalhos abertos. Cada matéria também tem a sua página, com filtro por ano. Para entregar, o aluno preenche nome, casa, ano e o texto, sem limite prático de tamanho. Nome, casa e ano ficam lembrados no aparelho e são preenchidos sozinhos nos formulários do site.
+- **Professores** se cadastram na **Área do Professor** com nome, matéria e senha. O cadastro fica "Aguardando aprovação" até a Staff aprovar. Depois de aprovados, eles:
+  - criam trabalhos (ano, data em que foi passado, descrição e pontuação máxima);
+  - veem as entregas, marcadas como **no prazo** ou **entregue atrasado** (em vermelho);
+  - corrigem: a nota vai **automaticamente para a Taça da casa do aluno**.
+- **Prazos automáticos**, contados a partir da data em que o trabalho foi passado:
+  | Período | Situação | Nota máxima |
+  |---|---|---|
+  | 1ª semana | Aberto | 100% |
+  | 2ª semana | Entrega atrasada | 50% |
+  | Depois | Encerrado | não aceita entregas |
+- Cada aluno entrega uma vez por trabalho, e cada entrega é corrigida uma vez. Com a Taça trancada, os professores não conseguem lançar pontos.
 
 ## Arquivos
 
@@ -19,7 +38,8 @@ css/style.css    visual (dourado, pergaminho, animações)
 js/config.js     configuração: Firebase, limite diário, regras das perícias
 js/houses.js     casas, brasões e ampulhetas (SVG)
 js/store.js      armazenamento (Firebase na nuvem, ou local)
-js/app.js        lógica das páginas
+js/app.js        lógica das páginas (Salão, Treinos, Staff)
+js/trabalhos.js  Plataforma de Trabalhos (alunos, professores, aprovação)
 firestore.rules  regras de segurança do banco na nuvem
 ```
 
@@ -47,7 +67,9 @@ Com o **Firebase** (gratuito), tudo fica salvo na nuvem:
    - Senha: a senha combinada para a staff. Não escreva a senha neste repositório, porque ele é público.
 
    No site, a staff continua entrando com o nickname **Staff Dobby** e essa senha. O e-mail é só interno e não recebe mensagens.
-   Para outra pessoa da staff, crie mais um usuário seguindo o mesmo padrão: o nickname em minúsculas, com hífens no lugar dos espaços, + `@staff.riseofmagic.app`. Exemplo: "Prof Snape" vira `prof-snape@staff.riseofmagic.app`.
+   Para outra pessoa da staff, crie mais um usuário seguindo o mesmo padrão: o nickname em minúsculas, com hífens no lugar dos espaços, + `@staff.riseofmagic.app` (exemplo: "Staff Luna" vira `staff-luna@staff.riseofmagic.app`). **Depois, acrescente esse e-mail na lista `staffEmails()` no começo do `firestore.rules` e publique as regras de novo.** Só os e-mails dessa lista têm poder de staff.
+
+   Os professores não precisam de nada disso: eles se cadastram pelo próprio site (o Firebase cria a conta `nome@prof.riseofmagic.app` sozinho) e a Staff aprova pelo painel.
 6. **Registrar o site:** clique na engrenagem ⚙️ → *Configurações do projeto* → em *Seus apps*, clique no ícone **`</>`** (Web), dê um apelido e registre. Vai aparecer um bloco `const firebaseConfig = { ... }`.
 7. **Colar a configuração:** copie o que está entre as chaves e cole em `js/config.js`, no lugar de `firebase: null`. Fica assim, com os seus valores:
 

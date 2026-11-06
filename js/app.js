@@ -65,6 +65,30 @@
   }
   const houseBadge = k => { const h = H.BY_KEY[k]; return h ? `<span class="hbadge hb-${k}">${h.name}</span>` : ""; };
 
+  /* ---------- Perfil do aluno (lembrado neste aparelho para preencher formulários) ---------- */
+  const profile = {
+    get() { try { return JSON.parse(localStorage.getItem("hrm_student")) || {}; } catch (e) { return {}; } },
+    save(p) {
+      const cur = profile.get();
+      const next = Object.assign(cur, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== "" && v != null)));
+      try { localStorage.setItem("hrm_student", JSON.stringify(next)); } catch (e) {}
+      return next;
+    },
+    /* preenche campos vazios de um formulário com o perfil */
+    fill(form, map) {
+      const pr = profile.get();
+      Object.entries(map).forEach(([field, key]) => {
+        const el = form.elements[field];
+        if (!el || el.value || pr[key] == null) return;
+        if (el.tagName === "SELECT") { if ([...el.options].some(o => o.value === String(pr[key]))) el.value = String(pr[key]); }
+        else el.value = pr[key];
+      });
+    }
+  };
+  /* ano no formato "3º ano" <-> 3 */
+  const yearLabel = n => YEARS[Number(n) - 1] || "";
+  const yearNum = label => YEARS.indexOf(label) + 1 || Number(label) || null;
+
   /* ---------- faíscas douradas ---------- */
   (function sparkles() {
     const box = $("#sparkles");
@@ -85,20 +109,28 @@
   /* =====================================================
      ROTEAMENTO
      ===================================================== */
-  const views = { salao: viewSalao, treinos: viewTreinos, staff: viewStaff };
+  const school = name => (v, parts) => window.HRM_SCHOOL[name](v, parts);
+  const views = {
+    salao: viewSalao, treinos: viewTreinos, staff: viewStaff,
+    trabalhos: school("viewTrabalhos"), professor: school("viewProfessor")
+  };
+  const TAB_OF = { professor: "trabalhos" };
   let refreshTimer, stopWatch;
   function route() {
-    const r = (location.hash.replace(/^#\/?/, "") || "salao").split("/")[0];
-    const name = views[r] ? r : "salao";
-    $$(".tabbar a").forEach(a => a.classList.toggle("active", a.dataset.route === name));
+    const parts = (location.hash.replace(/^#\/?/, "") || "salao").split("/").map(decodeURIComponent);
+    const name = views[parts[0]] ? parts[0] : "salao";
+    $$(".tabbar a").forEach(a => a.classList.toggle("active", a.dataset.route === (TAB_OF[name] || name)));
     clearInterval(refreshTimer);
     if (stopWatch) { stopWatch(); stopWatch = null; }
+    if (!$("#sheet").hidden) closeSheet();
     const v = $("#view");
     v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter");
-    views[name](v);
+    views[name](v, parts);
     window.scrollTo(0, 0);
   }
-  window.addEventListener("hashchange", () => ready.then(route));
+  const domReady = new Promise(r => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", r) : r());
+  const appReady = Promise.all([ready, domReady]);
+  window.addEventListener("hashchange", () => appReady.then(route));
 
   /* =====================================================
      SALÃO PRINCIPAL
@@ -230,6 +262,7 @@
         const p = $("#filePreview", body); p.src = URL.createObjectURL(f); p.hidden = false;
         $("#fileDrop", body).querySelector("b").textContent = f.name;
       });
+      profile.fill(form, { name: "name", year: "yearLabel", house: "house" });
       form.addEventListener("submit", async ev => {
         ev.preventDefault();
         const fd = new FormData(form);
@@ -252,6 +285,7 @@
             type: fd.get("type"), amount, sceneDate, note: String(fd.get("note") || "").trim(),
             image, status: "pending", createdAt: Date.now()
           });
+          profile.save({ name, yearLabel: fd.get("year"), year: yearNum(fd.get("year")), house: fd.get("house") });
           closeSheet();
           toast("Coruja enviada! Aguarde a análise da moderação. 🦉", "ok");
         } catch (e) {
@@ -308,6 +342,7 @@
       </section>`;
 
     const form = $("#trainForm");
+    profile.fill(form, { name: "name", house: "house" });
     let usedToday = 0, checkTimer;
     const req = () => types[form.kind.value];
     const update = () => {
@@ -336,6 +371,7 @@
     });
     form.addEventListener("change", update);
     update();
+    if (form.name.value) checkDaily();
 
     form.addEventListener("submit", async ev => {
       ev.preventDefault();
@@ -351,6 +387,7 @@
           id: S.uid(), name, charKey: S.normName(name), house, skill, kind,
           pp: t.pp, chars, scene, day: S.today(), createdAt: Date.now()
         }, CFG.trainingsPerDay);
+        profile.save({ name, house });
         toast(`Treino registrado! +${t.pp} PP em ${skill}. ✨`, "ok");
         form.scene.value = "";
         await checkDaily(); loadLog();
@@ -402,14 +439,192 @@
     return sha256Fallback(str);
   }
 
-  function viewStaff(v) { isStaff() ? staffPanel(v) : staffLogin(v); }
+  /* Rotas da staff: #/staff (painel), #/staff/taca, #/staff/treinos, #/staff/professores */
+  function viewStaff(v, parts = []) {
+    if (!isStaff()) return staffLogin(v);
+    const sub = parts[1] || "";
+    if (sub === "taca") return staffCup(v);
+    if (sub === "treinos") return staffTrainings(v);
+    if (sub === "professores") return window.HRM_SCHOOL.staffTeachers(v);
+    return staffHub(v);
+  }
+
+  async function staffLogout() {
+    if (cloud()) await S.logout();
+    try { sessionStorage.removeItem("hrm_staff"); } catch (e) {}
+    if (location.hash !== "#/staff") location.hash = "#/staff"; else route();
+  }
+
+  function staffHeader(title, opts = {}) {
+    return `
+      <section class="hero small">
+        ${opts.back === false ? "" : `<a class="back-link" href="#/staff">‹ Painel da Staff</a>`}
+        <p class="eyebrow">${opts.eyebrow || "Painel da Staff"}</p>
+        <h1 class="page-title">${title}</h1>
+        <button class="link logout-link" data-logout>Sair</button>
+      </section>`;
+  }
+  const bindLogout = v => $$("[data-logout]", v).forEach(b => b.addEventListener("click", staffLogout));
+
+  const ICONS = {
+    cup: `<svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8M9 18h6"/></svg>`,
+    wand: `<svg viewBox="0 0 24 24"><path d="M4 20 17 7M15 5l4 4M19 3l.6 1.4L21 5l-1.4.6L19 7l-.6-1.4L17 5l1.4-.6zM8 3l.4 1L9.4 4.4 8.4 4.8 8 6l-.4-1.2-1-.4 1-.4z"/></svg>`,
+    cap: `<svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5M22 9v6"/></svg>`
+  };
+
+  async function staffHub(v) {
+    v.innerHTML = staffHeader("Moderação", { back: false }) + `
+      <p class="lead center hub-hello">Olá, ${esc(staffName())}. Escolha uma área para gerenciar.</p>
+      <section class="hub">
+        <a class="hub-card" href="#/staff/taca">
+          <span class="hub-icon">${ICONS.cup}</span>
+          <span class="hub-text"><b>Taça</b><small>Pedidos de pontos, histórico, trancar, ajustes e reset</small></span>
+          <i class="hub-badge" data-count="req" hidden></i>
+        </a>
+        <a class="hub-card" href="#/staff/treinos">
+          <span class="hub-icon">${ICONS.wand}</span>
+          <span class="hub-text"><b>Treinos</b><small>Histórico completo dos treinos de perícias</small></span>
+        </a>
+        <a class="hub-card" href="#/staff/professores">
+          <span class="hub-icon">${ICONS.cap}</span>
+          <span class="hub-text"><b>Professores</b><small>Aprovar ou recusar cadastros de professores</small></span>
+          <i class="hub-badge" data-count="prof" hidden></i>
+        </a>
+      </section>`;
+    bindLogout(v);
+    const badge = (k, n) => { const b = $(`[data-count="${k}"]`, v); if (b && n) { b.textContent = n; b.hidden = false; } };
+    try { badge("req", (await S.listRequests()).filter(r => r.status === "pending").length); } catch (e) {}
+    try { badge("prof", (await S.listTeachers()).filter(t => t.status === "pending").length); } catch (e) {}
+  }
+
+  /* ---------- Taça ---------- */
+  let staffTab = "pending";
+  function staffCup(v) {
+    v.innerHTML = staffHeader("Taça das Casas") + `
+      <section class="stats" id="stats"></section>
+      <div class="tabs tabs-3" role="tablist">
+        <button data-tab="pending">Pendentes</button>
+        <button data-tab="history">Histórico</button>
+        <button data-tab="adjust">Controle</button>
+      </div>
+      <section id="staffList" class="staff-list"></section>`;
+    bindLogout(v);
+    $$(".tabs button", v).forEach(b => b.addEventListener("click", () => { staffTab = b.dataset.tab; renderStaff(); }));
+    renderStaff();
+    refreshTimer = setInterval(() => { if (staffTab === "pending") renderStaff(); }, 30000);
+  }
+
+  async function renderStaff() {
+    const box = $("#staffList"); if (!box) return;
+    $$(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === staffTab));
+    let reqs = [], pts = {};
+    try { [reqs, pts] = await Promise.all([S.listRequests(), S.getPoints()]); }
+    catch (e) { box.innerHTML = `<p class="muted center">Erro ao carregar dados.</p>`; return; }
+    const pending = reqs.filter(r => r.status === "pending");
+    $("#stats").innerHTML = H.HOUSES.map(h => `
+      <div class="stat hb-${h.key}"><small>${h.name}</small><b>${fmt(pts[h.key])}</b></div>`).join("");
+    $('.tabs [data-tab="pending"]').innerHTML = `Pendentes${pending.length ? ` <i>${pending.length}</i>` : ""}`;
+
+    if (staffTab === "pending") {
+      box.innerHTML = pending.length ? pending.map(reqCard).join("") : `<p class="muted center empty">Nenhuma coruja aguardando. ✦</p>`;
+    } else if (staffTab === "history") {
+      const done = reqs.filter(r => r.status !== "pending");
+      box.innerHTML = (done.length ? `<p class="muted tiny center">O histórico é permanente: os registros não podem ser excluídos.</p>` + done.map(reqCard).join("")
+        : `<p class="muted center empty">Nenhuma solicitação analisada ainda.</p>`);
+    } else {
+      return renderAdjust(box);
+    }
+    bindReqCards(box);
+  }
+
+  function reqCard(r) {
+    const add = r.type === "add";
+    const st = { pending: "Pendente", approved: "Aprovada", denied: "Negada" }[r.status];
+    return `
+      <article class="req ${r.status}" data-id="${esc(r.id)}">
+        <button class="req-img" data-img aria-label="Ver print"><img src="${esc(r.image)}" alt="Print de ${esc(r.name)}" loading="lazy"></button>
+        <div class="req-info">
+          <div class="req-top"><b>${esc(r.name)}</b><span class="amt ${add ? "plus" : "minus"}">${add ? "+" : "−"}${fmt(r.amount)}</span></div>
+          <p>${houseBadge(r.house)} <span class="muted">${esc(r.year)}</span></p>
+          ${r.sceneDate ? `<p class="scene-date">📅 Cena de ${esc(r.sceneDate.split("-").reverse().join("/"))}</p>` : ""}
+          ${r.note ? `<p class="note">“${esc(r.note)}”</p>` : ""}
+          <p class="muted tiny">${fmtDate(r.createdAt)}${r.status !== "pending" ? ` · <span class="st st-${r.status}">${st}</span>${r.resolvedBy ? ` por ${esc(r.resolvedBy)}` : ""}` : ""}</p>
+          ${r.status === "pending" ? `
+          <div class="req-actions">
+            <button class="btn btn-ok" data-act="approve">Aprovar</button>
+            <button class="btn btn-no" data-act="deny">Negar</button>
+          </div>` : ""}
+        </div>
+      </article>`;
+  }
+
+  function bindReqCards(box) {
+    const by = staffName();
+    $$(".req", box).forEach(card => {
+      const id = card.dataset.id;
+      card.querySelector("[data-img]").addEventListener("click", () => showImage(card.querySelector("img").src));
+      $$("[data-act]", card).forEach(b => b.addEventListener("click", async () => {
+        const approve = b.dataset.act === "approve";
+        $$("button", card).forEach(x => x.disabled = true);
+        try {
+          await S.resolveRequest(id, approve, by);
+          card.classList.add("leaving");
+          toast(approve ? "Aprovada! Pontos aplicados à casa." : "Solicitação negada.", approve ? "ok" : "");
+          setTimeout(renderStaff, 380);
+        } catch (e) { toast(e.message || "Erro.", "err"); renderStaff(); }
+      }));
+    });
+  }
+
+  /* ---------- Treinos (histórico completo) ---------- */
+  async function staffTrainings(v) {
+    const types = CFG.skillTypes;
+    v.innerHTML = staffHeader("Treinos") + `
+      <section class="panel filters">
+        <div class="row">
+          <label class="field"><span>Buscar personagem</span><input id="trSearch" type="search" placeholder="Nome do personagem" autocomplete="off"></label>
+          <label class="field"><span>Casa</span><select id="trHouse"><option value="">Todas</option>${H.HOUSES.map(h => `<option value="${h.key}">${h.name}</option>`).join("")}</select></label>
+        </div>
+        <p class="muted tiny" id="trSummary"></p>
+      </section>
+      <section id="trList" class="staff-list"><p class="muted center">Carregando…</p></section>`;
+    bindLogout(v);
+    let list = [];
+    try { list = await S.listTrainings(); }
+    catch (e) { $("#trList").innerHTML = `<p class="muted center">Erro ao carregar os treinos.</p>`; return; }
+    const draw = () => {
+      const q = S.normName($("#trSearch").value), h = $("#trHouse").value;
+      const items = list.filter(t => (!q || S.normName(t.name).includes(q)) && (!h || t.house === h));
+      const pp = items.reduce((n, t) => n + (Number(t.pp) || 0), 0);
+      $("#trSummary").textContent = `${fmt(items.length)} treino(s) · ${fmt(pp)} PP no total`;
+      $("#trList").innerHTML = items.length ? items.map(t => `
+        <article class="req train" data-id="${esc(t.id)}">
+          <div class="req-info">
+            <div class="req-top"><b>${esc(t.name)}</b><span class="amt plus">+${t.pp} PP</span></div>
+            <p>${houseBadge(t.house)} <span class="muted">${esc(t.skill)} · ${esc(types[t.kind]?.label || t.kind)}</span></p>
+            <p class="muted tiny">${fmtDate(t.createdAt)} · ${fmt(t.chars)} caracteres</p>
+            <details><summary>Ler cena</summary><div class="scene">${esc(t.scene)}</div></details>
+            <button class="link tiny" data-del>Excluir treino</button>
+          </div>
+        </article>`).join("") : `<p class="muted center empty">Nenhum treino encontrado.</p>`;
+      $$("[data-del]", $("#trList")).forEach(b => b.addEventListener("click", async () => {
+        if (!confirm("Excluir este treino? O personagem poderá enviar outro hoje.")) return;
+        const id = b.closest(".req").dataset.id;
+        try { await S.deleteTraining(id); list = list.filter(t => t.id !== id); toast("Treino excluído."); draw(); }
+        catch (e) { toast(e.message || "Erro.", "err"); }
+      }));
+    };
+    $("#trSearch").addEventListener("input", draw);
+    $("#trHouse").addEventListener("change", draw);
+    draw();
+  }
 
   function staffLogin(v) {
     v.innerHTML = `
       <section class="hero small">
         <p class="eyebrow">Acesso restrito</p>
         <h1 class="page-title">Sala da Staff</h1>
-        <p class="lead">Somente monitores e professores autorizados.</p>
+        <p class="lead">Somente membros da Staff. Professores entram pela <a href="#/professor">Área do Professor</a>.</p>
       </section>
       <section class="panel login">
         <div class="keyhole" aria-hidden="true"></div>
@@ -435,118 +650,6 @@
         toast("Nickname ou senha incorretos.", "err");
       }
     });
-  }
-
-  let staffTab = "pending";
-  function staffPanel(v) {
-    v.innerHTML = `
-      <section class="hero small">
-        <p class="eyebrow">Painel da Staff</p>
-        <h1 class="page-title">Moderação</h1>
-        <button class="link" id="logout">Sair</button>
-      </section>
-      <section class="stats" id="stats"></section>
-      <div class="tabs" role="tablist">
-        <button data-tab="pending">Pendentes</button>
-        <button data-tab="history">Histórico</button>
-        <button data-tab="trainings">Treinos</button>
-        <button data-tab="adjust">Taça</button>
-      </div>
-      <section id="staffList" class="staff-list"></section>`;
-    $("#logout").addEventListener("click", async () => {
-      if (cloud()) await S.backend.staffLogout();
-      try { sessionStorage.removeItem("hrm_staff"); } catch (e) {}
-      route();
-    });
-    $$(".tabs button").forEach(b => b.addEventListener("click", () => { staffTab = b.dataset.tab; renderStaff(); }));
-    renderStaff();
-    refreshTimer = setInterval(() => { if (staffTab === "pending") renderStaff(); }, 30000);
-  }
-
-  async function renderStaff() {
-    const box = $("#staffList"); if (!box) return;
-    $$(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === staffTab));
-    let reqs = [], pts = {};
-    try { [reqs, pts] = await Promise.all([S.listRequests(), S.getPoints()]); }
-    catch (e) { box.innerHTML = `<p class="muted center">Erro ao carregar dados.</p>`; return; }
-    const pending = reqs.filter(r => r.status === "pending");
-    $("#stats").innerHTML = H.HOUSES.map(h => `
-      <div class="stat hb-${h.key}"><small>${h.name}</small><b>${fmt(pts[h.key])}</b></div>`).join("");
-    $('.tabs [data-tab="pending"]').innerHTML = `Pendentes${pending.length ? ` <i>${pending.length}</i>` : ""}`;
-
-    if (staffTab === "pending") {
-      box.innerHTML = pending.length ? pending.map(reqCard).join("") : `<p class="muted center empty">Nenhuma coruja aguardando. ✦</p>`;
-    } else if (staffTab === "history") {
-      const done = reqs.filter(r => r.status !== "pending");
-      box.innerHTML = done.length ? done.map(reqCard).join("") : `<p class="muted center empty">Nenhuma solicitação analisada ainda.</p>`;
-    } else if (staffTab === "trainings") {
-      return renderStaffTrainings(box);
-    } else {
-      return renderAdjust(box);
-    }
-    bindReqCards(box);
-  }
-
-  function reqCard(r) {
-    const add = r.type === "add";
-    const st = { pending: "Pendente", approved: "Aprovada", denied: "Negada" }[r.status];
-    return `
-      <article class="req ${r.status}" data-id="${esc(r.id)}">
-        <button class="req-img" data-img aria-label="Ver print"><img src="${esc(r.image)}" alt="Print de ${esc(r.name)}" loading="lazy"></button>
-        <div class="req-info">
-          <div class="req-top"><b>${esc(r.name)}</b><span class="amt ${add ? "plus" : "minus"}">${add ? "+" : "−"}${fmt(r.amount)}</span></div>
-          <p>${houseBadge(r.house)} <span class="muted">${esc(r.year)}</span></p>
-          ${r.sceneDate ? `<p class="scene-date">📅 Cena de ${esc(r.sceneDate.split("-").reverse().join("/"))}</p>` : ""}
-          ${r.note ? `<p class="note">“${esc(r.note)}”</p>` : ""}
-          <p class="muted tiny">${fmtDate(r.createdAt)}${r.status !== "pending" ? ` · <span class="st st-${r.status}">${st}</span>${r.resolvedBy ? ` por ${esc(r.resolvedBy)}` : ""}` : ""}</p>
-          ${r.status === "pending" ? `
-          <div class="req-actions">
-            <button class="btn btn-ok" data-act="approve">Aprovar</button>
-            <button class="btn btn-no" data-act="deny">Negar</button>
-          </div>` : `<button class="link tiny" data-act="delete">Excluir registro</button>`}
-        </div>
-      </article>`;
-  }
-
-  function bindReqCards(box) {
-    const by = staffName();
-    $$(".req", box).forEach(card => {
-      const id = card.dataset.id;
-      card.querySelector("[data-img]").addEventListener("click", () => showImage(card.querySelector("img").src));
-      $$("[data-act]", card).forEach(b => b.addEventListener("click", async () => {
-        const act = b.dataset.act;
-        if (act === "delete" && !confirm("Excluir este registro do histórico?")) return;
-        $$("button", card).forEach(x => x.disabled = true);
-        try {
-          if (act === "delete") await S.deleteRequest(id);
-          else await S.resolveRequest(id, act === "approve", by);
-          card.classList.add("leaving");
-          toast(act === "approve" ? "Aprovada! Pontos aplicados à casa." : act === "deny" ? "Solicitação negada." : "Registro excluído.", act === "deny" ? "" : "ok");
-          setTimeout(renderStaff, 380);
-        } catch (e) { toast(e.message || "Erro.", "err"); renderStaff(); }
-      }));
-    });
-  }
-
-  async function renderStaffTrainings(box) {
-    let list;
-    try { list = await S.listTrainings(); } catch (e) { box.innerHTML = `<p class="muted center">Erro ao carregar.</p>`; return; }
-    const types = CFG.skillTypes;
-    box.innerHTML = list.length ? list.map(t => `
-      <article class="req train" data-id="${esc(t.id)}">
-        <div class="req-info">
-          <div class="req-top"><b>${esc(t.name)}</b><span class="amt plus">+${t.pp} PP</span></div>
-          <p>${houseBadge(t.house)} <span class="muted">${esc(t.skill)} · ${esc(types[t.kind]?.label || t.kind)}</span></p>
-          <p class="muted tiny">${fmtDate(t.createdAt)} · ${fmt(t.chars)} caracteres</p>
-          <details><summary>Ler cena</summary><div class="scene">${esc(t.scene)}</div></details>
-          <button class="link tiny" data-del>Excluir treino</button>
-        </div>
-      </article>`).join("") : `<p class="muted center empty">Nenhum treino registrado.</p>`;
-    $$("[data-del]", box).forEach(b => b.addEventListener("click", async () => {
-      if (!confirm("Excluir este treino? O personagem poderá enviar outro hoje.")) return;
-      try { await S.deleteTraining(b.closest(".req").dataset.id); toast("Treino excluído."); renderStaff(); }
-      catch (e) { toast(e.message || "Erro.", "err"); }
-    }));
   }
 
   async function renderAdjust(box) {
@@ -647,8 +750,15 @@
     return hash.map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
   }
 
+  /* ---------- utilidades compartilhadas com a Plataforma de Trabalhos (js/trabalhos.js) ---------- */
+  window.HRM_UI = {
+    $, $$, esc, fmt, fmtDate, toast, openSheet, closeSheet, houseOptions, houseBadge,
+    YEARS, yearLabel, yearNum, profile, route, isStaff, staffName, staffHeader, bindLogout,
+    countChars, setRefresh: (fn, ms) => { clearInterval(refreshTimer); refreshTimer = setInterval(fn, ms); }
+  };
+
   /* ---------- início ---------- */
-  ready.then(route);
+  appReady.then(route);
   ready.then(mode => {
     if (mode === "firebase") return;
     const chip = $("#modeChip");

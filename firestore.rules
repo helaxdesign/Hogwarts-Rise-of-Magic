@@ -1,25 +1,64 @@
 rules_version = '2';
 
 // Regras de segurança do Hogwarts: Rise of Magic
-// Firebase Console → Firestore Database → Regras → cole este conteúdo → Publicar
+// Firebase Console → Firestore Database → Rules → cole este conteúdo → Publish
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Staff = qualquer conta criada em Authentication (ex.: staff-dobby@staff.riseofmagic.app)
-    function isStaff() { return request.auth != null; }
-    function houses() { return ['grifinoria', 'corvinal', 'sonserina', 'lufalufa']; }
-    function cupPath() { return /databases/$(database)/documents/meta/points; }
-    // A Taça está aberta se o placar ainda não existe ou se "locked" não é true
-    function cupOpen() { return !exists(cupPath()) || get(cupPath()).data.get('locked', false) != true; }
+    // ---------- Quem é quem ----------
+    // Contas da Staff. Para adicionar alguém da staff: crie a conta em Authentication
+    // e coloque o e-mail dela nesta lista.
+    function staffEmails() { return ['staff-dobby@staff.riseofmagic.app']; }
+    function isStaff() { return request.auth != null && request.auth.token.email in staffEmails(); }
 
-    // Placar: todos leem, só a staff altera
+    // Professor = conta com ficha em /teachers aprovada pela Staff
+    function teacherPath() { return /databases/$(database)/documents/teachers/$(request.auth.uid); }
+    function isTeacher() {
+      return request.auth != null && exists(teacherPath()) && get(teacherPath()).data.status == 'approved';
+    }
+
+    function houses() { return ['grifinoria', 'corvinal', 'sonserina', 'lufalufa']; }
+    function subjects() {
+      return ['feiticos', 'transfiguracao', 'pocoes', 'dcat', 'herbologia', 'historia', 'astronomia',
+              'aritmancia', 'adivinhacao', 'runas', 'trouxas', 'criaturas', 'varinhologia',
+              'alquimia', 'medibruxaria', 'duelos', 'voo'];
+    }
+    function cupPath() { return /databases/$(database)/documents/meta/points; }
+    function cupOpen() { return !exists(cupPath()) || get(cupPath()).data.get('locked', false) != true; }
+    function subPath(id) { return /databases/$(database)/documents/submissions/$(id); }
+    function asgPath(id) { return /databases/$(database)/documents/assignments/$(id); }
+
+    // ---------- Placar da Taça ----------
+    // Todos leem. A Staff altera. Um professor só pode somar à casa do aluno exatamente
+    // os pontos da correção que está salvando junto (campo lastGrade = id da entrega).
+    function teacherGradeToCup() {
+      let sid = request.resource.data.lastGrade;
+      let before = get(subPath(sid)).data;
+      let after = getAfter(subPath(sid)).data;
+      let h = after.house;
+      return before.status == 'pending' && after.status == 'graded'
+        && before.teacherUid == request.auth.uid
+        && after.points is int && after.points > 0
+        && (
+          (resource == null
+            && request.resource.data.keys().hasOnly([h, 'lastGrade'])
+            && request.resource.data.get(h, 0) == after.points)
+          ||
+          (resource != null
+            && resource.data.get('locked', false) != true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([h, 'lastGrade'])
+            && request.resource.data.get(h, 0) == resource.data.get(h, 0) + after.points)
+        );
+    }
     match /meta/points {
       allow read: if true;
       allow write: if isStaff();
+      allow create, update: if isTeacher() && teacherGradeToCup();
     }
 
-    // Pedidos de pontos: qualquer um envia (sempre como "pendente") enquanto a Taça estiver aberta;
-    // só a staff lê e decide
+    // ---------- Pedidos de pontos (Taça) ----------
+    // Qualquer um envia (sempre "pendente") com a Taça aberta. Só a Staff lê e decide.
+    // O histórico é permanente: ninguém exclui, e uma decisão não pode ser refeita.
     match /requests/{id} {
       allow create: if cupOpen()
         && request.resource.data.status == 'pending'
@@ -29,10 +68,12 @@ service cloud.firestore {
         && request.resource.data.amount >= 1 && request.resource.data.amount <= 1000
         && request.resource.data.name is string && request.resource.data.name.size() <= 60
         && request.resource.data.image is string && request.resource.data.image.size() < 900000;
-      allow read, update, delete: if isStaff();
+      allow read: if isStaff();
+      allow update: if isStaff() && resource.data.status == 'pending';
+      allow delete: if false;
     }
 
-    // Treinos: todos leem e registram (respeitando o mínimo de caracteres); só a staff exclui
+    // ---------- Treinos ----------
     match /trainings/{id} {
       allow read: if true;
       allow create: if request.resource.data.house in houses()
@@ -41,6 +82,73 @@ service cloud.firestore {
          || (request.resource.data.kind == 'talento'   && request.resource.data.pp == 25 && request.resource.data.scene.size() >= 750)
          || (request.resource.data.kind == 'inaptidao' && request.resource.data.pp == 15 && request.resource.data.scene.size() >= 3000));
       allow delete: if isStaff();
+    }
+
+    // ---------- Professores ----------
+    // O próprio professor cria a ficha (sempre "pending"); só a Staff aprova ou recusa.
+    match /teachers/{tid} {
+      allow get: if isStaff() || (request.auth != null && request.auth.uid == tid);
+      allow list: if isStaff();
+      allow create: if request.auth != null && request.auth.uid == tid
+        && request.auth.token.email.matches('.*@prof[.]riseofmagic[.]app$')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.subject in subjects()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60;
+      allow update, delete: if isStaff();
+    }
+
+    // ---------- Trabalhos ----------
+    // Todos leem. Só professor aprovado cria, sempre com o próprio nome e matéria,
+    // e com o período de atraso de exatamente 7 dias depois do prazo.
+    match /assignments/{aid} {
+      allow read: if true;
+      allow create: if isTeacher()
+        && request.resource.data.teacherUid == request.auth.uid
+        && request.resource.data.teacherName == get(teacherPath()).data.name
+        && request.resource.data.subject == get(teacherPath()).data.subject
+        && request.resource.data.year is int
+        && request.resource.data.year >= 1 && request.resource.data.year <= 7
+        && request.resource.data.maxPoints is int
+        && request.resource.data.maxPoints >= 1 && request.resource.data.maxPoints <= 1000
+        && request.resource.data.description is string && request.resource.data.description.size() > 0
+        && request.resource.data.dueAt is int
+        && request.resource.data.closeAt == request.resource.data.dueAt + 604800000;
+      allow update: if false;
+      allow delete: if isStaff() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
+    }
+
+    // ---------- Entregas dos alunos ----------
+    // Qualquer aluno entrega dentro do prazo (uma entrega por aluno por trabalho; o servidor
+    // confere se ela é "no prazo" ou "atrasada"). Só o professor do trabalho e a Staff leem.
+    function submissionOk(sid) {
+      let d = request.resource.data;
+      let a = get(asgPath(d.assignmentId)).data;
+      let now = request.time.toMillis();
+      return sid == d.assignmentId + '__' + d.studentKey
+        && d.teacherUid == a.teacherUid
+        && d.status == 'pending' && !('points' in d)
+        && d.house in houses()
+        && d.studentName is string && d.studentName.size() > 0 && d.studentName.size() <= 60
+        && d.text is string && d.text.size() > 0
+        && now <= a.closeAt + 300000
+        && ((d.late == false && now <= a.dueAt + 300000) || (d.late == true && now > a.dueAt - 300000));
+    }
+    // Correção: nota inteira, até 100% no prazo ou até 50% se atrasado; só uma vez
+    function gradeOk() {
+      let a = get(asgPath(resource.data.assignmentId)).data;
+      let d = request.resource.data;
+      return resource.data.status == 'pending' && d.status == 'graded'
+        && d.points is int && d.points >= 0
+        && ((resource.data.late == false && d.points <= a.maxPoints)
+            || (resource.data.late == true && d.points * 2 <= a.maxPoints))
+        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'points', 'gradedAt']);
+    }
+    match /submissions/{sid} {
+      allow read: if isStaff() || (request.auth != null && resource.data.teacherUid == request.auth.uid);
+      allow create: if submissionOk(sid);
+      allow update: if isTeacher() && resource.data.teacherUid == request.auth.uid && gradeOk();
+      allow delete: if false;
     }
   }
 }
