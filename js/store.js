@@ -41,7 +41,9 @@
     dupSub: "Este aluno já entregou este trabalho.",
     graded: "Este trabalho já foi corrigido.",
     lockedGrade: "A Taça está trancada pela Staff: por enquanto não é possível lançar pontos. Tente de novo quando a Taça for reaberta (ou corrija com 0 pontos).",
-    net: "Sem conexão com o servidor."
+    net: "Sem conexão com o servidor.",
+    tooMany: "Muitas tentativas erradas seguidas: o Firebase bloqueou o login desta conta por alguns minutos. Aguarde e tente de novo com calma.",
+    disabled: "Esta conta foi desativada no Firebase. Fale com a Staff."
   };
   function buildAssignment(t, input) {
     const { dueAt, closeAt } = deadlines(input.assignedDate);
@@ -290,6 +292,7 @@
           return true;
         } catch (e) {
           if (/network/i.test(e.code || "")) throw new Error("Sem conexão com o servidor.");
+          if (e.code === "auth/too-many-requests") throw new Error(MSG.tooMany);
           return false;
         }
       },
@@ -318,7 +321,13 @@
       async teacherLogin(name, pass) {
         let cred;
         try { cred = await auth.signInWithEmailAndPassword(teacherEmail(name), pass); }
-        catch (e) { if (/network/i.test(e.code || "")) throw new Error(MSG.net); return { ok: false, reason: "invalid" }; }
+        catch (e) {
+          const c = e.code || "";
+          if (/network/i.test(c)) throw new Error(MSG.net);
+          if (c === "auth/too-many-requests") throw new Error(MSG.tooMany);
+          if (c === "auth/user-disabled") throw new Error(MSG.disabled);
+          return { ok: false, reason: "invalid" };
+        }
         const t = await loadTeacher(cred.user).catch(() => null);
         if (!t || t.status !== "approved") { await auth.signOut(); return { ok: false, reason: t ? t.status : "missing" }; }
         teacher = t;

@@ -716,3 +716,12 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia(1
 .feedback { margin: 8px 0; padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--gold-2); background: rgba(233,196,106,.08);
   white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; font-size: 16px; }
 .feedback b { display: block; font-style: normal; font-family: var(--display); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-2); margin-bottom: 2px; }
+
+/* mostrar/ocultar senha */
+.pass-wrap { position: relative; display: block; }
+.pass-wrap input { padding-right: 84px; }
+.pass-wrap .eye {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  border: 0; background: rgba(233,196,106,.12); color: var(--gold-1); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  font-family: var(--display); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+}

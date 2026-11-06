@@ -422,7 +422,7 @@
     const login = v.querySelector("#profLogin");
     if (login) login.addEventListener("submit", async ev => {
       ev.preventDefault();
-      const btn = login.querySelector("button");
+      const btn = login.querySelector("button[type=submit]");
       if (!login.name.value.trim() || !login.pass.value) return toast("Preencha o nome e a senha.", "err");
       busy(btn, true);
       try {
@@ -432,7 +432,7 @@
           pending: "Seu cadastro ainda está aguardando aprovação da Staff.",
           rejected: "Seu cadastro foi recusado pela Staff.",
           missing: "Cadastro não encontrado. Faça o cadastro novamente."
-        }[r.reason] || "Nome ou senha incorretos.";
+        }[r.reason] || "Nome ou senha incorretos. Use o nome exatamente como foi cadastrado e confira as maiúsculas da senha.";
         login.classList.remove("shake"); void login.offsetWidth; login.classList.add("shake");
         toast(msg, "err");
       } catch (e) { toast(e.message || "Erro ao entrar.", "err"); }
@@ -442,7 +442,7 @@
     const signup = v.querySelector("#profSignup");
     if (signup) signup.addEventListener("submit", async ev => {
       ev.preventDefault();
-      const f = signup, btn = f.querySelector("button");
+      const f = signup, btn = f.querySelector("button[type=submit]");
       const name = f.name.value.trim();
       if (!name) return toast("Informe o nome do professor.", "err");
       if (!f.subject.value) return toast("Escolha a matéria.", "err");
@@ -575,7 +575,7 @@
         const n = Number(form.points.value);
         if (form.points.value === "" || !Number.isInteger(n) || n < 0 || n > max) return toast(`Informe um número inteiro de 0 a ${max}.`, "err");
         if (!confirm(`Confirmar ${fmt(n)} pontos para ${s.studentName}${n > 0 ? ` (somados à Taça da ${house})` : ""}? A correção não pode ser alterada depois.`)) return;
-        const btn = form.querySelector("button");
+        const btn = form.querySelector("button[type=submit]");
         btn.disabled = true; btn.classList.add("loading");
         try {
           await S.gradeSubmission(s.id, n, form.feedback.value);

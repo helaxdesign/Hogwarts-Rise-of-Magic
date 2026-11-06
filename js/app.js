@@ -104,6 +104,27 @@
     }
   })();
 
+  /* ---------- botão de mostrar/ocultar senha ---------- */
+  function addEyes(root) {
+    root.querySelectorAll('input[type="password"]:not([data-eye])').forEach(inp => {
+      inp.dataset.eye = "1";
+      const wrap = document.createElement("span");
+      wrap.className = "pass-wrap";
+      inp.parentNode.insertBefore(wrap, inp);
+      wrap.appendChild(inp);
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "eye"; b.textContent = "mostrar";
+      b.setAttribute("aria-label", "Mostrar senha");
+      b.addEventListener("click", () => {
+        const show = inp.type === "password";
+        inp.type = show ? "text" : "password";
+        b.textContent = show ? "ocultar" : "mostrar";
+      });
+      wrap.appendChild(b);
+    });
+  }
+  new MutationObserver(() => addEyes(document.body)).observe(document.body, { childList: true, subtree: true });
+
   const ready = S.init();
 
   /* =====================================================
@@ -636,7 +657,7 @@
       </section>`;
     $("#loginForm").addEventListener("submit", async ev => {
       ev.preventDefault();
-      const f = ev.target, btn = f.querySelector("button");
+      const f = ev.target, btn = f.querySelector("button[type=submit]");
       btn.disabled = true; btn.classList.add("loading");
       let ok = false, failed = false;
       try { ok = await staffLoginCheck(f.nick.value, f.pass.value); }
