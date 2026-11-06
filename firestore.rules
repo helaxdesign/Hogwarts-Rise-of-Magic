@@ -120,7 +120,8 @@ service cloud.firestore {
 
     // ---------- Entregas dos alunos ----------
     // Qualquer aluno entrega dentro do prazo (uma entrega por aluno por trabalho; o servidor
-    // confere se ela é "no prazo" ou "atrasada"). Só o professor do trabalho e a Staff leem.
+    // confere se ela é "no prazo" ou "atrasada"). Enquanto não corrigida, só o professor do
+    // trabalho e a Staff leem; depois de corrigida, ela entra no Histórico de Correções (público).
     function submissionOk(sid) {
       let d = request.resource.data;
       let a = get(asgPath(d.assignmentId)).data;
@@ -134,7 +135,7 @@ service cloud.firestore {
         && now <= a.closeAt + 300000
         && ((d.late == false && now <= a.dueAt + 300000) || (d.late == true && now > a.dueAt - 300000));
     }
-    // Correção: nota inteira, até 100% no prazo ou até 50% se atrasado; só uma vez
+    // Correção: nota inteira, até 100% no prazo ou até 50% se atrasado; comentário opcional; só uma vez
     function gradeOk() {
       let a = get(asgPath(resource.data.assignmentId)).data;
       let d = request.resource.data;
@@ -142,10 +143,12 @@ service cloud.firestore {
         && d.points is int && d.points >= 0
         && ((resource.data.late == false && d.points <= a.maxPoints)
             || (resource.data.late == true && d.points * 2 <= a.maxPoints))
-        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'points', 'gradedAt']);
+        && (!('feedback' in d) || (d.feedback is string && d.feedback.size() <= 5000))
+        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'points', 'gradedAt', 'feedback']);
     }
     match /submissions/{sid} {
-      allow read: if isStaff() || (request.auth != null && resource.data.teacherUid == request.auth.uid);
+      allow read: if isStaff() || (request.auth != null && resource.data.teacherUid == request.auth.uid)
+        || resource.data.status == 'graded';
       allow create: if submissionOk(sid);
       allow update: if isTeacher() && resource.data.teacherUid == request.auth.uid && gradeOk();
       allow delete: if false;

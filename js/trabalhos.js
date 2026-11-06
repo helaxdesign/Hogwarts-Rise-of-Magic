@@ -47,6 +47,7 @@
   function viewTrabalhos(v, parts) {
     if (parts[1] === "ano" && Number(parts[2]) >= 1 && Number(parts[2]) <= 7) return yearPage(v, Number(parts[2]));
     if (parts[1] === "materia" && SUBJ[parts[2]]) return subjectPage(v, parts[2], Number(parts[3]) || 0);
+    if (parts[1] === "historico") return historyPage(v, Number(parts[2]) || 0, SUBJ[parts[3]] ? parts[3] : "", H.BY_KEY[parts[4]] ? parts[4] : "");
     return home(v);
   }
 
@@ -79,6 +80,10 @@
             <b>${y}º</b><span>ano</span><small data-count="${y}">&nbsp;</small>
           </a>`).join("")}
       </section>
+      <a class="hist-cta" href="#/trabalhos/historico">
+        <span class="hub-icon"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/></svg></span>
+        <span class="hub-text"><b>Histórico de Correções</b><small>Veja os deveres entregues, as correções dos professores e os pontos de cada aluno</small></span>
+      </a>
       ${subjectButtons(0)}
       <section class="panel prof-cta">
         <h3>É professor(a)?</h3>
@@ -203,6 +208,110 @@
       const a = list.find(x => x.id === b.dataset.deliver);
       if (a) openDeliver(a, onChange);
     }));
+  }
+
+  /* =====================================================
+     HISTÓRICO DE CORREÇÕES
+     #/trabalhos/historico[/ano[/materia[/casa]]]
+     ===================================================== */
+  async function historyPage(v, y, slug, house) {
+    const { esc, fmt, houseBadge } = U();
+    const base = "#/trabalhos/historico";
+    const crumbs = [
+      `<a href="${base}">${y ? yearTxt(y) : "Ano"}</a>`,
+      y ? `<a href="${base}/${y}">${slug ? esc(subjName(slug)) : "Matéria"}</a>` : `<span>Matéria</span>`,
+      slug ? `<span>${house ? H.BY_KEY[house].name : "Casa"}</span>` : `<span>Casa</span>`
+    ];
+    const step = !y ? 1 : !slug ? 2 : !house ? 3 : 4;
+    const back = step === 1 ? ["#/trabalhos", "Plataforma de Trabalhos"]
+      : step === 2 ? [base, "Escolher o ano"] : step === 3 ? [`${base}/${y}`, "Escolher a matéria"] : [`${base}/${y}/${slug}`, "Escolher a casa"];
+    v.innerHTML = `
+      <section class="hero small">
+        ${backLink(back[0], back[1])}
+        <p class="eyebrow">Plataforma de Trabalhos</p>
+        <h1 class="page-title">Histórico de Correções</h1>
+        <p class="lead">${["", "Escolha o ano", "Escolha a matéria", "Escolha a casa", "Deveres corrigidos, comentários e pontos"][step]}</p>
+      </section>
+      <nav class="crumbs">${crumbs.map((c, i) => `<span class="crumb ${i + 1 === step ? "now" : i + 1 < step ? "done" : ""}">${c}</span>`).join('<i>›</i>')}</nav>
+      <section id="histBody"></section>`;
+    const box = $id("histBody");
+
+    if (step === 1) {
+      box.innerHTML = `<section class="year-grid">${[1, 2, 3, 4, 5, 6, 7].map(n => `
+        <a class="year-btn" href="${base}/${n}"><b>${n}º</b><span>ano</span></a>`).join("")}</section>`;
+      return;
+    }
+    if (step === 2) {
+      box.innerHTML = `<div class="subject-grid subjects">${SUBJECTS.map(x =>
+        `<a class="subject-btn" href="${base}/${y}/${x.slug}">${x.name}</a>`).join("")}</div>`;
+      return;
+    }
+    if (step === 3) {
+      box.innerHTML = `<div class="house-grid">${H.HOUSES.map(h => `
+        <a class="house-btn hb-${h.key}" href="${base}/${y}/${slug}/${h.key}">
+          ${H.crestSVG(h.key, { uid: "hist" })}
+        </a>`).join("")}</div>`;
+      return;
+    }
+
+    box.innerHTML = `<p class="muted center">Carregando…</p>`;
+    let subs = [], asg = [];
+    try { [subs, asg] = await Promise.all([S.listGraded({ year: y, subject: slug, house }), S.listAssignments({ subject: slug })]); }
+    catch (e) { box.innerHTML = `<p class="muted center">Não foi possível carregar o histórico.</p>`; return; }
+    const byId = Object.fromEntries(asg.map(a => [a.id, a]));
+    // agrupa por aluno
+    const groups = {};
+    subs.forEach(s => { (groups[s.studentKey] = groups[s.studentKey] || { name: s.studentName, key: s.studentKey, items: [] }).items.push(s); });
+    const me = S.slugKey(U().profile.get().name || "");
+    const students = Object.values(groups).sort((a, b) => (b.key === me) - (a.key === me) || a.name.localeCompare(b.name, "pt-BR"));
+    const total = subs.reduce((n, s) => n + (Number(s.points) || 0), 0);
+    if (!students.length) {
+      box.innerHTML = `<p class="muted center empty">Ainda não há deveres corrigidos de ${esc(subjName(slug))} do ${yearTxt(y)} na ${H.BY_KEY[house].name}.</p>`;
+      return;
+    }
+    const now = Date.now();
+    const workHTML = s => {
+      const a = byId[s.assignmentId];
+      const max = a ? S.maxPointsFor(a, s.late) : null;
+      const open = a && now <= a.closeAt;
+      return `
+        <article class="hist-work">
+          <header class="sub-top">
+            <b>${a ? esc(a.description.split("\n")[0].slice(0, 80)) + (a.description.length > 80 ? "…" : "") : "Trabalho"}</b>
+            <span class="hist-pts">${fmt(s.points)}${max != null ? `<small>/${fmt(max)}</small>` : ""} <small>pts</small></span>
+          </header>
+          <p class="muted tiny">${esc(profName(s.teacherName))} · entregue em ${fmtDateTime(s.submittedAt)}${s.gradedAt ? ` · corrigido em ${fmtDay(s.gradedAt)}` : ""}</p>
+          <p><span class="pill ${s.late ? "late" : "ontime"}">${s.late ? "Entregue atrasado" : "No prazo"}</span> <span class="pill ok">Corrigido</span></p>
+          ${s.feedback ? `<div class="feedback"><b>Correção do professor</b>${esc(s.feedback)}</div>` : `<p class="muted tiny">Sem comentários do professor.</p>`}
+          ${a ? `<details><summary>Enunciado</summary><div class="hw-desc">${esc(a.description)}</div></details>` : ""}
+          ${open
+            ? `<p class="muted tiny">📜 O texto entregue fica visível quando o prazo deste trabalho terminar (${fmtDay(a.closeAt)}), para evitar cópias.</p>`
+            : `<details><summary>Ver dever entregue</summary><div class="work-text">${esc(s.text)}</div></details>`}
+        </article>`;
+    };
+    box.innerHTML = `
+      <section class="hist-summary">
+        ${houseBadge(house)} <span>${esc(subjName(slug))} · ${yearTxt(y)}</span>
+        <span class="muted">${students.length} aluno(s) · ${subs.length} dever(es) · ${fmt(total)} pts para a ${H.BY_KEY[house].name}</span>
+      </section>
+      <label class="field hist-search"><span>Buscar aluno</span><input id="histSearch" type="search" placeholder="Nome do aluno" autocomplete="off"></label>
+      <div class="staff-list" id="histList">
+        ${students.map(g => {
+          const pts = g.items.reduce((n, s) => n + (Number(s.points) || 0), 0);
+          return `
+          <details class="hist-student" data-name="${esc(S.normName(g.name))}" ${g.key === me ? "open" : ""}>
+            <summary>
+              <span><b>${esc(g.name)}</b>${g.key === me ? ` <small class="you">você</small>` : ""}<small class="muted">${g.items.length} dever(es) corrigido(s)</small></span>
+              <span class="hist-pts">${fmt(pts)} <small>pts</small></span>
+            </summary>
+            <div class="hist-works">${g.items.map(workHTML).join("")}</div>
+          </details>`;
+        }).join("")}
+      </div>`;
+    $id("histSearch").addEventListener("input", e => {
+      const q = S.normName(e.target.value);
+      box.querySelectorAll(".hist-student").forEach(d => { d.hidden = !!q && !d.dataset.name.includes(q); });
+    });
   }
 
   /* =====================================================
@@ -441,11 +550,14 @@
       <h3 class="label">Texto do aluno <small class="muted">(${fmt(s.text.length)} caracteres)</small></h3>
       <div class="work-text">${esc(s.text)}</div>
       ${s.status === "graded" ? `
-        <div class="grade-done"><b>${fmt(s.points)} pontos</b> atribuídos${s.gradedAt ? ` em ${fmtDateTime(s.gradedAt)}` : ""}${s.points > 0 ? ` e somados à Taça da ${esc(house)}` : ""}.</div>` : !a ? `
+        <div class="grade-done"><b>${fmt(s.points)} pontos</b> atribuídos${s.gradedAt ? ` em ${fmtDateTime(s.gradedAt)}` : ""}${s.points > 0 ? ` e somados à Taça da ${esc(house)}` : ""}.</div>
+        ${s.feedback ? `<div class="feedback"><b>Comentários da correção</b>${esc(s.feedback)}</div>` : ""}` : !a ? `
         <p class="late-warn">O trabalho desta entrega foi excluído, então não é possível corrigir.</p>` : `
         <form id="gradeForm" class="form" novalidate>
           <label class="field"><span>Pontos recebidos (0 a ${fmt(max)})</span>
             <input name="points" type="number" inputmode="numeric" min="0" max="${max}" step="1" required placeholder="Ex.: ${Math.min(max, 10)}"></label>
+          <label class="field"><span>Comentários da correção <em>(opcional, aparece no Histórico)</em></span>
+            <textarea name="feedback" rows="4" maxlength="5000" placeholder="Ex.: Ótima explicação do preparo, mas faltou citar o tempo de infusão."></textarea></label>
           <p class="muted tiny">${s.late
             ? `Entrega atrasada: vale no máximo ${latePct()}% dos ${fmt(a.maxPoints)} pontos do trabalho.`
             : `Entrega no prazo: vale até ${fmt(a.maxPoints)} pontos.`} Os pontos vão automaticamente para a Taça da <b>${esc(house)}</b>.</p>
@@ -466,7 +578,7 @@
         const btn = form.querySelector("button");
         btn.disabled = true; btn.classList.add("loading");
         try {
-          await S.gradeSubmission(s.id, n);
+          await S.gradeSubmission(s.id, n, form.feedback.value);
           closeSheet();
           toast(n > 0 ? `Corrigido! +${fmt(n)} pontos para a ${house}. ✨` : "Correção salva.", "ok");
           setTimeout(onDone, 400);

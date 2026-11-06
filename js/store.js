@@ -196,7 +196,11 @@
       async listSubmissions(teacherUid) {
         return read("hrm_submissions", []).filter(x => x.teacherUid === teacherUid).sort((a, b) => b.submittedAt - a.submittedAt);
       },
-      async gradeSubmission(id, points) {
+      async listGraded(f) {
+        return read("hrm_submissions", []).filter(x => x.status === "graded" && x.assignmentYear === Number(f.year) &&
+          x.subject === f.subject && x.house === f.house).sort((a, b) => b.submittedAt - a.submittedAt);
+      },
+      async gradeSubmission(id, points, feedback = "") {
         const all = read("hrm_submissions", []), sub = all.find(x => x.id === id);
         if (!sub) throw new Error("Entrega não encontrada.");
         if (sub.status === "graded") throw new Error(MSG.graded);
@@ -206,7 +210,7 @@
         if (!Number.isInteger(points) || points < 0 || points > max) throw new Error(`A nota deve ser um número inteiro entre 0 e ${max}.`);
         const pts = read("hrm_points", {});
         if (points > 0 && pts.locked === true) throw new Error(MSG.lockedGrade);
-        Object.assign(sub, { status: "graded", points, gradedAt: Date.now() });
+        Object.assign(sub, { status: "graded", points, gradedAt: Date.now(), feedback: String(feedback || "").trim() });
         write("hrm_submissions", all);
         if (points > 0) {
           write("hrm_points", applyDelta(pts, { house: sub.house, type: "add", amount: points }));
@@ -358,7 +362,12 @@
       async listSubmissions(teacherUid) {
         return docs(await subCol.where("teacherUid", "==", teacherUid).get()).sort((a, b) => b.submittedAt - a.submittedAt);
       },
-      async gradeSubmission(id, points) {
+      async listGraded(f) {
+        const q = subCol.where("status", "==", "graded").where("assignmentYear", "==", Number(f.year))
+          .where("subject", "==", f.subject).where("house", "==", f.house);
+        return docs(await q.get()).sort((a, b) => b.submittedAt - a.submittedAt);
+      },
+      async gradeSubmission(id, points, feedback = "") {
         await db.runTransaction(async tx => {
           const ref = subCol.doc(id);
           const s = await tx.get(ref);
@@ -372,7 +381,7 @@
           const p = await tx.get(pointsRef);
           const pd = p.exists ? p.data() : {};
           if (points > 0 && pd.locked === true) throw new Error(MSG.lockedGrade);
-          tx.update(ref, { status: "graded", points, gradedAt: Date.now() });
+          tx.update(ref, { status: "graded", points, gradedAt: Date.now(), feedback: String(feedback || "").trim() });
           // os pontos vão direto para a Taça da casa do aluno
           if (points > 0) tx.set(pointsRef, { [sub.house]: (Number(pd[sub.house]) || 0) + points, lastGrade: id }, { merge: true });
         });
@@ -440,7 +449,7 @@
   ["getPoints", "getCup", "setCupLocked", "resetPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "adjustPoints",
    "listTrainings", "countTrainings", "addTraining", "deleteTraining",
    "teacherSignup", "teacherLogin", "currentTeacher", "logout", "listTeachers", "setTeacherStatus",
-   "createAssignment", "deleteAssignment", "listAssignments", "submitWork", "listSubmissions", "gradeSubmission"].forEach(fn => {
+   "createAssignment", "deleteAssignment", "listAssignments", "submitWork", "listSubmissions", "gradeSubmission", "listGraded"].forEach(fn => {
     Store[fn] = (...a) => Store.backend[fn](...a);
   });
 

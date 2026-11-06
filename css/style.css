@@ -668,3 +668,51 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia(1
 .tabbar a span { text-align: center; line-height: 1.15; }
 @media (max-width: 480px) { .tabbar a { font-size: 9.5px; letter-spacing: .03em; padding: 7px 2px; } }
 .req.teacher { grid-template-columns: 1fr; }
+
+/* ---------- Histórico de Correções ---------- */
+.hist-cta {
+  display: flex; align-items: center; gap: 14px; max-width: 640px; margin: 18px auto 0; padding: 16px;
+  border-radius: var(--radius); text-decoration: none; color: var(--ink);
+  background: radial-gradient(80% 90% at 0% 50%, rgba(233,196,106,.14), transparent 70%), linear-gradient(180deg, rgba(30,25,36,.88), rgba(14,12,18,.92));
+  border: 1px solid rgba(233,196,106,.45); box-shadow: 0 12px 30px -14px rgba(0,0,0,.9);
+}
+.hist-cta .hub-text b { font-size: 19px; }
+.crumbs { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin: 4px 0 18px;
+  font-family: var(--display); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.crumbs i { font-style: normal; color: var(--muted); }
+.crumb { padding: 5px 11px; border-radius: 99px; border: 1px solid rgba(233,196,106,.2); color: var(--muted); }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb.done { color: var(--gold-2); border-color: rgba(233,196,106,.4); }
+.crumb.now { color: var(--gold-1); border-color: var(--gold-2); background: rgba(233,196,106,.14); }
+.house-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 520px; margin: 0 auto; }
+@media (min-width: 720px) { .house-grid { grid-template-columns: repeat(4, 1fr); max-width: 760px; } }
+.house-btn { display: block; padding: 14px 10px 8px; border-radius: 18px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(30,25,36,.85), rgba(14,12,18,.9)); transition: transform .2s, box-shadow .2s; }
+.house-btn:hover, .house-btn:active { transform: translateY(-2px); box-shadow: 0 0 24px -6px rgba(233,196,106,.5); }
+.house-btn .crest { width: 100%; height: auto; display: block; filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); }
+.hist-summary { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 10px; max-width: 680px; margin: 0 auto 12px; text-align: center; }
+.hist-summary span { font-family: var(--display); font-size: 13px; letter-spacing: .04em; }
+.hist-summary .muted { flex-basis: 100%; font-family: var(--serif); font-size: 15px; letter-spacing: 0; }
+.hist-search { max-width: 680px; margin: 0 auto 12px; }
+#histList { max-width: 680px; margin: 0 auto; }
+.hist-student { border-radius: 16px; background: var(--card); border: 1px solid var(--line); overflow: hidden; }
+.hist-student[open] { border-color: rgba(233,196,106,.5); }
+.hist-student > summary {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; list-style: none;
+  text-transform: none; letter-spacing: 0; font-family: var(--serif); font-size: 17px; color: var(--ink);
+}
+.hist-student > summary::-webkit-details-marker { display: none; }
+.hist-student > summary b { font-family: var(--display); font-size: 15.5px; }
+.hist-student > summary small.muted { display: block; font-size: 13.5px; }
+.you { font-family: var(--display); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #2b1c04; background: var(--gold); border-radius: 99px; padding: 1px 7px; margin-left: 4px; }
+.hist-pts { flex: none; font-family: var(--deco); font-weight: 700; font-size: 20px; background: var(--gold); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hist-pts small { font-size: 12px; }
+.hist-works { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px; }
+.hist-work { padding: 12px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px solid rgba(233,196,106,.14); }
+.hist-work p { margin: 4px 0; }
+.hist-work .sub-top b { font-size: 14.5px; line-height: 1.3; }
+.hist-work details { margin-top: 8px; }
+.hist-work .work-text { margin: 8px 0 0; }
+.feedback { margin: 8px 0; padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--gold-2); background: rgba(233,196,106,.08);
+  white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; font-size: 16px; }
+.feedback b { display: block; font-style: normal; font-family: var(--display); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-2); margin-bottom: 2px; }

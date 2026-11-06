@@ -29,6 +29,7 @@ Site para RPG de Hogwarts, pensado primeiro para celulares. Ele tem:
   | 2ª semana | Entrega atrasada | 50% |
   | Depois | Encerrado | não aceita entregas |
 - Cada aluno entrega uma vez por trabalho, e cada entrega é corrigida uma vez. Com a Taça trancada, os professores não conseguem lançar pontos.
+- **Histórico de Correções** (público): escolha o ano, depois a matéria e depois a casa para ver cada aluno com os deveres corrigidos, o comentário do professor e os pontos ganhos. O texto entregue só aparece depois que o prazo do trabalho termina, para evitar cópias. Deveres ainda não corrigidos não aparecem no histórico.
 
 ## Arquivos
 
