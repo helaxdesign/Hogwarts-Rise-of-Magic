@@ -725,3 +725,6 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia(1
   border: 0; background: rgba(233,196,106,.12); color: var(--gold-1); border-radius: 8px; padding: 6px 10px; cursor: pointer;
   font-family: var(--display); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
 }
+.field > .pass-wrap { font-family: var(--serif); font-size: inherit; letter-spacing: normal; text-transform: none; color: var(--ink); }
+.pass-wrap input { font-family: var(--serif); text-transform: none; letter-spacing: normal; }
+.pass-wrap input { font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
