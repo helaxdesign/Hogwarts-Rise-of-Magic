@@ -728,3 +728,13 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia(1
 .field > .pass-wrap { font-family: var(--serif); font-size: inherit; letter-spacing: normal; text-transform: none; color: var(--ink); }
 .pass-wrap input { font-family: var(--serif); text-transform: none; letter-spacing: normal; }
 .pass-wrap input { font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
+
+/* apagar trabalhos */
+.btn-danger-link {
+  border: 1px solid rgba(212,87,63,.6); background: rgba(194,65,47,.12); color: #ffb4a3; cursor: pointer;
+  border-radius: 99px; padding: 6px 12px; font-family: var(--display); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+}
+.btn-danger-link:disabled { opacity: .5; }
+.stats-5 { grid-template-columns: repeat(5, 1fr); margin-bottom: 14px; }
+.stats-5 .stat small { font-size: 8.5px; }
+@media (min-width: 820px) { .hub { grid-template-columns: repeat(2, 1fr); max-width: 760px; } }

@@ -182,7 +182,20 @@
         const all = read("hrm_assignments", []); all.push(a); write("hrm_assignments", all);
         return a;
       },
-      async deleteAssignment(id) { write("hrm_assignments", read("hrm_assignments", []).filter(a => a.id !== id)); },
+      /* apaga o trabalho e tudo ligado a ele (entregas, correções, histórico) */
+      async deleteAssignment(id) {
+        const subs = read("hrm_submissions", []);
+        const n = subs.filter(x => x.assignmentId === id).length;
+        write("hrm_submissions", subs.filter(x => x.assignmentId !== id));
+        write("hrm_assignments", read("hrm_assignments", []).filter(a => a.id !== id));
+        return n;
+      },
+      async listAllSubmissions() { return read("hrm_submissions", []); },
+      async resetSchool() {
+        const r = { assignments: read("hrm_assignments", []).length, submissions: read("hrm_submissions", []).length };
+        write("hrm_assignments", []); write("hrm_submissions", []);
+        return r;
+      },
       async listAssignments(f = {}) {
         return read("hrm_assignments", []).filter(a =>
           (f.year == null || a.year === Number(f.year)) && (!f.subject || a.subject === f.subject) &&
@@ -268,6 +281,13 @@
       return new Error("Não foi possível concluir. Tente novamente.");
     };
     const docs = q => q.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    const batchDelete = async refs => {
+      for (let i = 0; i < refs.length; i += 400) {
+        const b = db.batch();
+        refs.slice(i, i + 400).forEach(r => b.delete(r));
+        await b.commit();
+      }
+    };
 
     return {
       mode: "firebase",
@@ -349,7 +369,21 @@
         await ref.set(a);
         return Object.assign({ id: ref.id }, a);
       },
-      async deleteAssignment(id) { await asgCol.doc(id).delete(); },
+      /* apaga o trabalho e tudo ligado a ele (entregas, correções, histórico) */
+      async deleteAssignment(id) {
+        const q = this.isStaff() ? subCol.where("assignmentId", "==", id)
+          : subCol.where("teacherUid", "==", (teacher && teacher.id) || "-").where("assignmentId", "==", id);
+        const subs = (await q.get()).docs;
+        await batchDelete([...subs.map(d => d.ref), asgCol.doc(id)]);
+        return subs.length;
+      },
+      async listAllSubmissions() { return docs(await subCol.get()); },
+      async resetSchool() {
+        const [subs, asg] = await Promise.all([subCol.get(), asgCol.get()]);
+        await batchDelete(subs.docs.map(d => d.ref));
+        await batchDelete(asg.docs.map(d => d.ref));
+        return { assignments: asg.docs.length, submissions: subs.docs.length };
+      },
       async listAssignments(f = {}) {
         let q = asgCol;
         if (f.year != null) q = q.where("year", "==", Number(f.year));
@@ -458,7 +492,7 @@
   ["getPoints", "getCup", "setCupLocked", "resetPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "adjustPoints",
    "listTrainings", "countTrainings", "addTraining", "deleteTraining",
    "teacherSignup", "teacherLogin", "currentTeacher", "logout", "listTeachers", "setTeacherStatus",
-   "createAssignment", "deleteAssignment", "listAssignments", "submitWork", "listSubmissions", "gradeSubmission", "listGraded"].forEach(fn => {
+   "createAssignment", "deleteAssignment", "listAssignments", "submitWork", "listSubmissions", "gradeSubmission", "listGraded", "listAllSubmissions", "resetSchool"].forEach(fn => {
     Store[fn] = (...a) => Store.backend[fn](...a);
   });
 

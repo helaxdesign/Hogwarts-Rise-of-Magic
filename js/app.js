@@ -467,6 +467,7 @@
     if (sub === "taca") return staffCup(v);
     if (sub === "treinos") return staffTrainings(v);
     if (sub === "professores") return window.HRM_SCHOOL.staffTeachers(v);
+    if (sub === "trabalhos") return window.HRM_SCHOOL.staffSchool(v);
     return staffHub(v);
   }
 
@@ -490,7 +491,8 @@
   const ICONS = {
     cup: `<svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8M9 18h6"/></svg>`,
     wand: `<svg viewBox="0 0 24 24"><path d="M4 20 17 7M15 5l4 4M19 3l.6 1.4L21 5l-1.4.6L19 7l-.6-1.4L17 5l1.4-.6zM8 3l.4 1L9.4 4.4 8.4 4.8 8 6l-.4-1.2-1-.4 1-.4z"/></svg>`,
-    cap: `<svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5M22 9v6"/></svg>`
+    cap: `<svg viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5M22 9v6"/></svg>`,
+    book: `<svg viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5zM4 21.5A2.5 2.5 0 0 1 6.5 19H20v3H6.5M8 7h8M8 11h6"/></svg>`
   };
 
   async function staffHub(v) {
@@ -510,6 +512,10 @@
           <span class="hub-icon">${ICONS.cap}</span>
           <span class="hub-text"><b>Professores</b><small>Aprovar ou recusar cadastros de professores</small></span>
           <i class="hub-badge" data-count="prof" hidden></i>
+        </a>
+        <a class="hub-card" href="#/staff/trabalhos">
+          <span class="hub-icon">${ICONS.book}</span>
+          <span class="hub-text"><b>Trabalhos</b><small>Ver e apagar trabalhos; reset geral da plataforma</small></span>
         </a>
       </section>`;
     bindLogout(v);

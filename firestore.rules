@@ -151,7 +151,8 @@ service cloud.firestore {
         || resource.data.status == 'graded';
       allow create: if submissionOk(sid);
       allow update: if isTeacher() && resource.data.teacherUid == request.auth.uid && gradeOk();
-      allow delete: if false;
+      // apagadas junto com o trabalho (pelo professor dele) ou no reset da Staff
+      allow delete: if isStaff() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
     }
   }
 }

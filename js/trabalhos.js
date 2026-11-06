@@ -607,7 +607,7 @@
           </dl>
           <footer class="hw-foot split">
             <span class="muted tiny">${mineSubs.length} entrega(s)${todo ? ` · <b class="todo-txt">${todo} para corrigir</b>` : ""}</span>
-            ${mineSubs.length ? "" : `<button class="link tiny" data-del="${esc(a.id)}">Excluir trabalho</button>`}
+            <button class="btn-danger-link" data-del="${esc(a.id)}" data-n="${mineSubs.length}" data-g="${mineSubs.filter(s => s.status === "graded").length}">Apagar trabalho</button>
           </footer>
         </article>`;
     }).join("")}</div>` : `<p class="muted center empty">Você ainda não criou nenhum trabalho.</p>
@@ -615,9 +615,15 @@
     const go = box.querySelector("#goNew");
     if (go) go.addEventListener("click", () => { profTab = "novo"; drawProf(v, t); });
     box.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
-      if (!confirm("Excluir este trabalho? Ele sai do mural dos alunos.")) return;
-      try { await S.deleteAssignment(b.dataset.del); toast("Trabalho excluído."); drawProf(v, t); }
-      catch (e) { toast(e.message || "Erro ao excluir.", "err"); }
+      const n = Number(b.dataset.n), g = Number(b.dataset.g);
+      const msg = n
+        ? `Apagar este trabalho?\n\nIsso apaga TUDO dele: o trabalho sai do mural e as ${n} entrega(s) dos alunos${g ? `, incluindo ${g} correção(ões) e o Histórico de Correções delas` : ""}, serão apagadas para sempre.\n\nOs pontos já enviados à Taça continuam.`
+        : "Apagar este trabalho? Ele sai do mural dos alunos.";
+      if (!confirm(msg)) return;
+      if (n && !confirm(`Tem certeza? ${n} entrega(s) serão apagadas e não dá para desfazer.`)) return;
+      b.disabled = true;
+      try { const k = await S.deleteAssignment(b.dataset.del); toast(k ? `Trabalho e ${k} entrega(s) apagados.` : "Trabalho apagado."); drawProf(v, t); }
+      catch (e) { toast(e.message || "Erro ao apagar.", "err"); b.disabled = false; }
     }));
   }
 
@@ -730,5 +736,67 @@
     draw();
   }
 
-  window.HRM_SCHOOL = { viewTrabalhos, viewProfessor, staffTeachers };
+  /* =====================================================
+     STAFF: TRABALHOS (#/staff/trabalhos) — apagar trabalhos e reset geral
+     ===================================================== */
+  async function staffSchool(v) {
+    const { esc, fmt, toast, staffHeader, bindLogout } = U();
+    v.innerHTML = staffHeader("Trabalhos") + `
+      <section class="stats stats-5" id="schStats"></section>
+      <section id="schList" class="staff-list"><p class="muted center">Carregando…</p></section>
+      <div class="panel danger-panel">
+        <h3>Reset dos trabalhos</h3>
+        <p class="muted">Apaga <b>todos</b> os trabalhos e <b>todas</b> as entregas e correções, inclusive o Histórico de Correções.
+          Os professores continuam cadastrados e os pontos já enviados à Taça não mudam. Não dá para desfazer.</p>
+        <button class="btn btn-no btn-block" id="schReset"><span>Reset geral dos trabalhos</span></button>
+      </div>`;
+    bindLogout(v);
+    let asg = [], subs = [];
+    async function load() {
+      try { [asg, subs] = await Promise.all([S.listAssignments({}), S.listAllSubmissions()]); }
+      catch (e) { $id("schList").innerHTML = `<p class="muted center">Erro ao carregar os trabalhos.</p>`; return; }
+      draw();
+    }
+    function draw() {
+      const now = Date.now();
+      const count = st => asg.filter(a => S.statusOf(a, now) === st).length;
+      $id("schStats").innerHTML = [
+        ["Abertos", count("open")], ["Em atraso", count("late")], ["Encerrados", count("closed")],
+        ["Entregas", subs.length], ["Corrigidas", subs.filter(s => s.status === "graded").length]
+      ].map(([l, n]) => `<div class="stat"><small>${l}</small><b>${fmt(n)}</b></div>`).join("");
+      $id("schList").innerHTML = asg.length ? asg.map(a => {
+        const st = S.statusOf(a, now), mine = subs.filter(s => s.assignmentId === a.id);
+        return `
+          <article class="hw-card compact st-${STATUS[st].cls}">
+            <header class="hw-head"><span class="hw-subject">${esc(subjName(a.subject))}</span><span class="hw-status ${STATUS[st].cls}">${STATUS[st].label}</span></header>
+            <p class="hw-meta">${esc(profName(a.teacherName))} · ${yearTxt(a.year)} · passado em ${fmtDayStr(a.assignedDate)}</p>
+            <div class="hw-desc clamp">${esc(a.description)}</div>
+            <footer class="hw-foot split">
+              <span class="muted tiny">${mine.length} entrega(s) · ${mine.filter(s => s.status === "graded").length} corrigida(s)</span>
+              <button class="btn-danger-link" data-del="${esc(a.id)}">Apagar</button>
+            </footer>
+          </article>`;
+      }).join("") : `<p class="muted center empty">Nenhum trabalho na plataforma.</p>`;
+      v.querySelectorAll("#schList [data-del]").forEach(b => b.addEventListener("click", async () => {
+        const a = asg.find(x => x.id === b.dataset.del), n = subs.filter(s => s.assignmentId === a.id).length;
+        if (!confirm(`Apagar o trabalho de ${subjName(a.subject)} (${profName(a.teacherName)}, ${yearTxt(a.year)})${n ? ` e as ${n} entrega(s) dele` : ""}? Não dá para desfazer.`)) return;
+        b.disabled = true;
+        try { await S.deleteAssignment(a.id); toast("Trabalho apagado."); load(); }
+        catch (e) { toast(e.message || "Erro ao apagar.", "err"); b.disabled = false; }
+      }));
+    }
+    $id("schReset").addEventListener("click", async ev => {
+      if (!confirm(`Reset geral dos trabalhos?\n\nSerão apagados ${asg.length} trabalho(s) e ${subs.length} entrega(s), com todas as correções e o Histórico de Correções.`)) return;
+      const typed = prompt('Para confirmar, digite RESET');
+      if (!typed || typed.trim().toUpperCase() !== "RESET") return toast("Reset cancelado.");
+      const btn = ev.currentTarget; btn.disabled = true; btn.classList.add("loading");
+      try { const r = await S.resetSchool(); toast(`Reset feito: ${r.assignments} trabalho(s) e ${r.submissions} entrega(s) apagados.`, "ok"); }
+      catch (e) { toast(e.message || "Erro no reset.", "err"); }
+      btn.disabled = false; btn.classList.remove("loading");
+      load();
+    });
+    load();
+  }
+
+  window.HRM_SCHOOL = { viewTrabalhos, viewProfessor, staffTeachers, staffSchool };
 })();
