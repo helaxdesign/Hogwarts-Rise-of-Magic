@@ -83,7 +83,8 @@
   const applyDelta = (points, r) => {
     const p = Object.assign(zero(), points);
     const delta = r.type === "add" ? r.amount : -r.amount;
-    p[r.house] = Math.max(0, (Number(p[r.house]) || 0) + delta);
+    // a pontuação pode ficar negativa (a casa perde pontos mesmo estando em 0)
+    p[r.house] = (Number(p[r.house]) || 0) + delta;
     return p;
   };
 

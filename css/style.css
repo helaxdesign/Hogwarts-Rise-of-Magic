@@ -738,3 +738,7 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8) sepia(1
 .stats-5 { grid-template-columns: repeat(5, 1fr); margin-bottom: 14px; }
 .stats-5 .stat small { font-size: 8.5px; }
 @media (min-width: 820px) { .hub { grid-template-columns: repeat(2, 1fr); max-width: 760px; } }
+
+/* pontuação negativa */
+.hall-pt.neg .num { background: linear-gradient(135deg, #ffb4a3, #e0533f 50%, #8f1d14); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.neg-txt { color: #ff8b7c !important; }

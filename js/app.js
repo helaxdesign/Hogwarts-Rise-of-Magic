@@ -204,18 +204,24 @@
 
   function renderPoints(pts) {
     if (!$("#hourglasses")) return;
-    const max = Math.max(...Object.values(pts), 0);
-    const capacity = Math.max(500, Math.ceil((max * 1.25) / 100) * 100);
+    const vals = H.HOUSES.map(h => Number(pts[h.key]) || 0);
+    const started = vals.some(n => n !== 0);
+    const top = Math.max(...vals);
+    // a areia só representa pontos positivos; casa negativa fica com a ampulheta vazia embaixo
+    const capacity = Math.max(500, Math.ceil((Math.max(top, 0) * 1.25) / 100) * 100);
     H.HOUSES.forEach(h => {
-      const lead = max > 0 && pts[h.key] === max;
-      animateNumber($(`[data-points="${h.key}"]`), pts[h.key]);
-      animateSand($(`.tube[data-house="${h.key}"]`), h.key, pts[h.key] / capacity);
+      const n = Number(pts[h.key]) || 0;
+      const lead = started && n === top;
+      animateNumber($(`[data-points="${h.key}"]`), n);
+      animateSand($(`.tube[data-house="${h.key}"]`), h.key, Math.max(0, n) / capacity);
       $$(`.hall [data-house="${h.key}"]`).forEach(el => el.classList.toggle("is-leader", lead));
+      const pt = $(`.hall-pt[data-house="${h.key}"]`);
+      if (pt) pt.classList.toggle("neg", n < 0);
     });
-    const leaders = H.HOUSES.filter(h => max > 0 && pts[h.key] === max);
-    $("#leader").innerHTML = leaders.length === 1
-      ? `<span>✦</span> ${leaders[0].name} lidera a Taça das Casas <span>✦</span>`
-      : max > 0 ? `<span>✦</span> Empate na liderança <span>✦</span>` : `<span>✦</span> A disputa ainda não começou <span>✦</span>`;
+    const leaders = H.HOUSES.filter((h, i) => started && vals[i] === top);
+    $("#leader").innerHTML = !started ? `<span>✦</span> A disputa ainda não começou <span>✦</span>`
+      : leaders.length === 1 ? `<span>✦</span> ${leaders[0].name} lidera a Taça das Casas <span>✦</span>`
+      : `<span>✦</span> Empate na liderança <span>✦</span>`;
   }
 
   function animateNumber(el, to) {
@@ -549,7 +555,7 @@
     catch (e) { box.innerHTML = `<p class="muted center">Erro ao carregar dados.</p>`; return; }
     const pending = reqs.filter(r => r.status === "pending");
     $("#stats").innerHTML = H.HOUSES.map(h => `
-      <div class="stat hb-${h.key}"><small>${h.name}</small><b>${fmt(pts[h.key])}</b></div>`).join("");
+      <div class="stat hb-${h.key}"><small>${h.name}</small><b class="${pts[h.key] < 0 ? "neg-txt" : ""}">${fmt(pts[h.key])}</b></div>`).join("");
     $('.tabs [data-tab="pending"]').innerHTML = `Pendentes${pending.length ? ` <i>${pending.length}</i>` : ""}`;
 
     if (staffTab === "pending") {
