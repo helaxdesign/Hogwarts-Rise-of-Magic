@@ -440,7 +440,7 @@
   /* =====================================================
      PAINEL DA STAFF
      ===================================================== */
-  const STAFF_HASH = "bffc207891f716a7b4dad06ca16a8c3de28287d67c3439c4b59fca46504f0c05";
+  const STAFF_HASH = "b32de867ad687ac48b1c6efa846a423b417e7f2c84a84c6472a81890ce7334e9";
   const cloud = () => S.backend && S.backend.mode === "firebase";
   const isStaff = () => {
     if (cloud()) return S.backend.isStaff();
