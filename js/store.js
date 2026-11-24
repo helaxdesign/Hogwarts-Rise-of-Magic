@@ -69,6 +69,10 @@
       }
     };
   }
+  const retakeFrom = (t, info) => ({
+    charKey: t.charKey, name: t.name, house: t.house, skill: t.skill, kind: t.kind, day: t.day || "",
+    deletedAt: Date.now(), deletedBy: info.by || "Staff", reason: String(info.reason || "").trim().slice(0, 300), used: false
+  });
   const hashPass = async str => {
     if (window.crypto && crypto.subtle) {
       const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
@@ -136,14 +140,35 @@
         window.dispatchEvent(new Event("hrm-points"));
       },
       async listTrainings() { return read("hrm_trainings", []).sort(byDate); },
-      async countTrainings(charKey, day) { return read("hrm_trainings", []).filter(t => t.charKey === charKey && t.day === day).length; },
-      async addTraining(t, limit) {
+      async countTrainings(charKey, day) {
+        return read("hrm_trainings", []).filter(t => t.charKey === charKey && t.day === day && !t.retake).length
+          + read("hrm_retakes", []).filter(r => r.charKey === charKey && r.day === day).length;
+      },
+      async addTraining(t, limit, retakeId) {
         const all = read("hrm_trainings", []);
-        if (all.filter(x => x.charKey === t.charKey && x.day === t.day).length >= limit)
+        if (retakeId) {
+          const rts = read("hrm_retakes", []), rt = rts.find(x => x.id === retakeId);
+          if (!rt || rt.used || rt.charKey !== t.charKey) throw new Error("Este treino já foi refeito ou não está disponível para refazer.");
+          all.push(Object.assign({}, t, { id: "retake__" + retakeId, skill: rt.skill, kind: rt.kind, retake: true, retakeId }));
+          Object.assign(rt, { used: true, usedAt: Date.now() });
+          write("hrm_trainings", all); write("hrm_retakes", rts);
+          return;
+        }
+        if (await this.countTrainings(t.charKey, t.day) >= limit)
           throw new Error(`Este personagem já enviou ${limit} treinos hoje.`);
         all.push(t); write("hrm_trainings", all);
       },
-      async deleteTraining(id) { write("hrm_trainings", read("hrm_trainings", []).filter(x => x.id !== id)); },
+      /* Staff exclui um treino: a pessoa ganha o direito de refazê-lo (fora do limite diário) */
+      async deleteTraining(id, info = {}) {
+        const all = read("hrm_trainings", []), t = all.find(x => x.id === id);
+        write("hrm_trainings", all.filter(x => x.id !== id));
+        if (t) {
+          const rts = read("hrm_retakes", []);
+          rts.push(Object.assign(retakeFrom(t, info), { id }));
+          write("hrm_retakes", rts);
+        }
+      },
+      async listRetakes(charKey) { return read("hrm_retakes", []).filter(r => r.charKey === charKey && !r.used); },
 
       /* ----- Professores (modo local: senha guardada como hash neste navegador) ----- */
       async teacherSignup(name, subject, pass) {
@@ -259,6 +284,7 @@
     const pointsRef = db.collection("meta").doc("points");
     const reqs = db.collection("requests");
     const trains = db.collection("trainings");
+    const retakesCol = db.collection("retakes");
     const teachersCol = db.collection("teachers");
     const asgCol = db.collection("assignments");
     const subCol = db.collection("submissions");
@@ -457,15 +483,32 @@
       },
       async listTrainings() { return docs(await trains.orderBy("createdAt", "desc").limit(200).get()); },
       async countTrainings(charKey, day) {
-        return (await trains.where("charKey", "==", charKey).where("day", "==", day).get()).size;
+        const [q, r] = await Promise.all([
+          trains.where("charKey", "==", charKey).where("day", "==", day).get(),
+          retakesCol.where("charKey", "==", charKey).where("day", "==", day).get()
+        ]);
+        // o treino excluído continua ocupando a vaga do dia (o "refazer" é a reposição dele)
+        return q.docs.filter(d => !d.data().retake).length + r.docs.length;
       },
-      async addTraining(t, limit) {
+      async addTraining(t, limit, retakeId) {
+        if (retakeId) {
+          const rtRef = retakesCol.doc(retakeId), ref = trains.doc("retake__" + retakeId);
+          await db.runTransaction(async tx => {
+            const s = await tx.get(rtRef);
+            const rt = s.exists ? s.data() : null;
+            if (!rt || rt.used || rt.charKey !== t.charKey) throw new Error("Este treino já foi refeito ou não está disponível para refazer.");
+            tx.set(ref, Object.assign({}, t, { id: ref.id, skill: rt.skill, kind: rt.kind, retake: true, retakeId }));
+            tx.update(rtRef, { used: true, usedAt: Date.now() });
+          });
+          return;
+        }
         // id determinístico por personagem/dia/slot impede ultrapassar o limite
         for (let slot = 1; slot <= limit; slot++) {
           const ref = trains.doc(`${t.day}__${t.charKey.replace(/[^a-z0-9]+/g, "-")}__${slot}`);
           const ok = await db.runTransaction(async tx => {
             const s = await tx.get(ref);
             if (s.exists) return false;
+            if ((await tx.get(retakesCol.doc(ref.id))).exists) return false; // vaga de um treino excluído
             tx.set(ref, Object.assign({}, t, { id: ref.id }));
             return true;
           });
@@ -473,7 +516,17 @@
         }
         throw new Error(`Este personagem já enviou ${limit} treinos hoje.`);
       },
-      async deleteTraining(id) { await trains.doc(id).delete(); }
+      /* Staff exclui um treino: a pessoa ganha o direito de refazê-lo (fora do limite diário) */
+      async deleteTraining(id, info = {}) {
+        const ref = trains.doc(id), s = await ref.get();
+        const b = db.batch();
+        b.delete(ref);
+        if (s.exists) b.set(retakesCol.doc(id), retakeFrom(s.data(), info));
+        await b.commit();
+      },
+      async listRetakes(charKey) {
+        return docs(await retakesCol.where("charKey", "==", charKey).where("used", "==", false).get());
+      }
     };
   }
 
@@ -491,7 +544,7 @@
     }
   };
   ["getPoints", "getCup", "setCupLocked", "resetPoints", "watchPoints", "listRequests", "addRequest", "resolveRequest", "adjustPoints",
-   "listTrainings", "countTrainings", "addTraining", "deleteTraining",
+   "listTrainings", "countTrainings", "addTraining", "deleteTraining", "listRetakes",
    "teacherSignup", "teacherLogin", "currentTeacher", "logout", "listTeachers", "setTeacherStatus",
    "createAssignment", "deleteAssignment", "listAssignments", "submitWork", "listSubmissions", "gradeSubmission", "listGraded", "listAllSubmissions", "resetSchool"].forEach(fn => {
     Store[fn] = (...a) => Store.backend[fn](...a);

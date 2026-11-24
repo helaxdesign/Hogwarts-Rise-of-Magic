@@ -340,6 +340,7 @@
             <span>${fmt(t.chars)} caracteres</span><em>+${t.pp} PP</em></div>`).join("")}
       </section>
       <section class="panel">
+        <div id="retakeBox"></div>
         <form id="trainForm" class="form" novalidate>
           <label class="field"><span>Nome do personagem</span>
             <input name="name" required maxlength="60" autocomplete="off" placeholder="Ex.: Lyra Blackwood"></label>
@@ -370,25 +371,55 @@
 
     const form = $("#trainForm");
     profile.fill(form, { name: "name", house: "house" });
-    let usedToday = 0, checkTimer;
-    const req = () => types[form.kind.value];
+    let usedToday = 0, checkTimer, retakes = [], retake = null;
+    const req = () => types[retake ? retake.kind : form.kind.value];
+    const kindName = k => (types[k]?.label || k).replace("Perícia ", "");
+    /* modo "refazer": trava perícia e tipo iguais aos do treino excluído */
+    const setRetake = rt => {
+      retake = rt;
+      form.skill.disabled = !!rt;
+      $$('input[name="kind"]', form).forEach(r => { r.disabled = !!rt; if (rt) r.checked = r.value === rt.kind; });
+      if (rt) form.skill.value = rt.skill;
+      drawRetakes(); update();
+    };
+    const drawRetakes = () => {
+      const box = $("#retakeBox");
+      if (retake) {
+        box.innerHTML = `<div class="retake active"><b>🔁 Refazendo o treino de ${esc(retake.skill)} · ${esc(kindName(retake.kind))}</b>
+          <small>Este treino não conta no limite de hoje.</small>
+          <button type="button" class="link tiny" data-cancel>Cancelar</button></div>`;
+        box.querySelector("[data-cancel]").addEventListener("click", () => setRetake(null));
+        return;
+      }
+      box.innerHTML = retakes.map(r => `
+        <div class="retake">
+          <b>🔁 Seu treino de ${esc(r.skill)} · ${esc(kindName(r.kind))}${r.day ? ` de ${esc(r.day.split("-").reverse().join("/"))}` : ""} foi excluído pela Staff.</b>
+          ${r.reason ? `<p class="note">Motivo: “${esc(r.reason)}”</p>` : ""}
+          <small>Você pode refazê-lo agora. Ele não conta no limite de ${CFG.trainingsPerDay} treinos por dia.</small>
+          <button type="button" class="btn btn-gold" data-retake="${esc(r.id)}"><span>Refazer este treino</span></button>
+        </div>`).join("");
+      $$("[data-retake]", box).forEach(b => b.addEventListener("click", () => setRetake(retakes.find(r => r.id === b.dataset.retake))));
+    };
     const update = () => {
       const n = countChars(form.scene.value), need = req().chars;
       const pct = Math.min(100, (n / need) * 100);
       $("#meterFill").style.width = pct + "%";
       $("#meterFill").classList.toggle("done", n >= need);
       $("#meterText").innerHTML = `${fmt(n)} / ${fmt(need)} caracteres` + (n >= need ? ` · <b>pronto!</b>` : ` · faltam ${fmt(need - n)}`);
-      $("#trainBtn").disabled = n < need || usedToday >= CFG.trainingsPerDay || !form.name.value.trim();
-      $("#trainBtn span").textContent = `Registrar treino · +${req().pp} PP`;
+      $("#trainBtn").disabled = n < need || (!retake && usedToday >= CFG.trainingsPerDay) || !form.name.value.trim();
+      $("#trainBtn span").textContent = `${retake ? "Refazer treino" : "Registrar treino"} · +${req().pp} PP`;
     };
     const checkDaily = async () => {
       const key = S.normName(form.name.value);
-      if (!key) { usedToday = 0; $("#daily").textContent = ""; update(); return; }
+      if (retake && retake.charKey !== key) setRetake(null);
+      if (!key) { usedToday = 0; retakes = []; drawRetakes(); $("#daily").textContent = ""; update(); return; }
       try { usedToday = await S.countTrainings(key, S.today()); } catch (e) { usedToday = 0; }
+      try { retakes = await S.listRetakes(key); } catch (e) { retakes = []; }
+      drawRetakes();
       const left = CFG.trainingsPerDay - usedToday;
-      $("#daily").className = "daily " + (left <= 0 ? "full" : "");
+      $("#daily").className = "daily " + (left <= 0 && !retake ? "full" : "");
       $("#daily").textContent = left <= 0
-        ? `Limite diário atingido (${usedToday}/${CFG.trainingsPerDay}). Volte amanhã!`
+        ? `Limite diário atingido (${usedToday}/${CFG.trainingsPerDay}).${retakes.length ? " Você ainda pode refazer o treino excluído acima." : " Volte amanhã!"}`
         : `Treinos hoje: ${usedToday}/${CFG.trainingsPerDay}`;
       update();
     };
@@ -402,21 +433,24 @@
 
     form.addEventListener("submit", async ev => {
       ev.preventDefault();
-      const name = form.name.value.trim(), house = form.house.value, skill = form.skill.value.trim();
-      const kind = form.kind.value, t = types[kind], scene = form.scene.value.trim(), chars = countChars(scene);
+      const name = form.name.value.trim(), house = form.house.value;
+      const skill = retake ? retake.skill : form.skill.value.trim();
+      const kind = retake ? retake.kind : form.kind.value, t = types[kind], scene = form.scene.value.trim(), chars = countChars(scene);
       if (!name) return toast("Informe o nome do personagem.", "err");
       if (!house) return toast("Selecione a casa.", "err");
       if (!skill) return toast("Informe a perícia.", "err");
       if (chars < t.chars) return toast(`A cena precisa de ${fmt(t.chars)} caracteres.`, "err");
       const btn = $("#trainBtn"); btn.disabled = true; btn.classList.add("loading");
       try {
+        const wasRetake = !!retake;
         await S.addTraining({
           id: S.uid(), name, charKey: S.normName(name), house, skill, kind,
           pp: t.pp, chars, scene, day: S.today(), createdAt: Date.now()
-        }, CFG.trainingsPerDay);
+        }, CFG.trainingsPerDay, retake ? retake.id : undefined);
         profile.save({ name, house });
-        toast(`Treino registrado! +${t.pp} PP em ${skill}. ✨`, "ok");
+        toast(wasRetake ? `Treino refeito! +${t.pp} PP em ${skill}. ✨` : `Treino registrado! +${t.pp} PP em ${skill}. ✨`, "ok");
         form.scene.value = "";
+        if (wasRetake) { form.skill.value = ""; setRetake(null); }
         await checkDaily(); loadLog();
       } catch (e) {
         toast(e.message || "Erro ao registrar treino.", "err");
@@ -431,7 +465,7 @@
         <div class="log-item">
           <div><b>${esc(t.name)}</b> ${houseBadge(t.house)}
             <small>${esc(t.skill)} · ${esc(types[t.kind]?.label.replace("Perícia ", "") || t.kind)} · ${fmtDate(t.createdAt)}</small></div>
-          <span class="pp">+${t.pp} PP</span>
+          <span class="pp">${t.retake ? `<i class="redo">refeito</i> ` : ""}+${t.pp} PP</span>
         </div>`).join("") : `<p class="muted center">Nenhum treino registrado ainda.</p>`;
     }
     loadLog();
@@ -634,16 +668,18 @@
         <article class="req train" data-id="${esc(t.id)}">
           <div class="req-info">
             <div class="req-top"><b>${esc(t.name)}</b><span class="amt plus">+${t.pp} PP</span></div>
-            <p>${houseBadge(t.house)} <span class="muted">${esc(t.skill)} · ${esc(types[t.kind]?.label || t.kind)}</span></p>
+            <p>${houseBadge(t.house)} <span class="muted">${esc(t.skill)} · ${esc(types[t.kind]?.label || t.kind)}</span>${t.retake ? ` <span class="pill todo">Refeito</span>` : ""}</p>
             <p class="muted tiny">${fmtDate(t.createdAt)} · ${fmt(t.chars)} caracteres</p>
             <details><summary>Ler cena</summary><div class="scene">${esc(t.scene)}</div></details>
             <button class="link tiny" data-del>Excluir treino</button>
           </div>
         </article>`).join("") : `<p class="muted center empty">Nenhum treino encontrado.</p>`;
       $$("[data-del]", $("#trList")).forEach(b => b.addEventListener("click", async () => {
-        if (!confirm("Excluir este treino? O personagem poderá enviar outro hoje.")) return;
-        const id = b.closest(".req").dataset.id;
-        try { await S.deleteTraining(id); list = list.filter(t => t.id !== id); toast("Treino excluído."); draw(); }
+        const id = b.closest(".req").dataset.id, tr = list.find(t => t.id === id);
+        if (!confirm(`Excluir este treino de ${tr.name}?\n\nA pessoa vai poder refazê-lo (mesma perícia e tipo), sem contar no limite do dia.`)) return;
+        const reason = prompt("Motivo da exclusão (opcional). Ele aparece para a pessoa na hora de refazer:", "");
+        if (reason === null) return;
+        try { await S.deleteTraining(id, { by: staffName(), reason }); list = list.filter(t => t.id !== id); toast("Treino excluído. A pessoa já pode refazê-lo."); draw(); }
         catch (e) { toast(e.message || "Erro.", "err"); }
       }));
     };

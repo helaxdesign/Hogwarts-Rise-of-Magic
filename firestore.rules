@@ -74,14 +74,35 @@ service cloud.firestore {
     }
 
     // ---------- Treinos ----------
+    // Treino refeito (id "retake__<id>"): só com um crédito de refazer ainda não usado, do mesmo
+    // personagem, mesma perícia e mesmo tipo; o crédito é marcado como usado junto.
+    function rtPath(rid) { return /databases/$(database)/documents/retakes/$(rid); }
+    function retakeOk(id) {
+      let d = request.resource.data;
+      return (!id.matches('retake__.*') && !('retakeId' in d) && d.get('retake', false) == false)
+        || (d.retakeId is string && id == 'retake__' + d.retakeId && d.retake == true
+            && get(rtPath(d.retakeId)).data.used == false
+            && getAfter(rtPath(d.retakeId)).data.used == true
+            && get(rtPath(d.retakeId)).data.charKey == d.charKey
+            && get(rtPath(d.retakeId)).data.kind == d.kind
+            && get(rtPath(d.retakeId)).data.skill == d.skill);
+    }
     match /trainings/{id} {
       allow read: if true;
-      allow create: if request.resource.data.house in houses()
+      allow create: if retakeOk(id) && request.resource.data.house in houses()
         && request.resource.data.scene is string
         && ((request.resource.data.kind == 'normal'    && request.resource.data.pp == 20 && request.resource.data.scene.size() >= 1500)
          || (request.resource.data.kind == 'talento'   && request.resource.data.pp == 25 && request.resource.data.scene.size() >= 750)
          || (request.resource.data.kind == 'inaptidao' && request.resource.data.pp == 15 && request.resource.data.scene.size() >= 3000));
       allow delete: if isStaff();
+    }
+    // Créditos para refazer: a Staff cria ao excluir um treino; o aluno só pode "usar" (uma vez)
+    match /retakes/{rid} {
+      allow read: if true;
+      allow create, delete: if isStaff();
+      allow update: if resource.data.used == false && request.resource.data.used == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt'])
+        && existsAfter(/databases/$(database)/documents/trainings/$('retake__' + rid));
     }
 
     // ---------- Professores ----------
